@@ -25,7 +25,7 @@ public class RailwaySignalMonitorMod {
         ModCreativeModeTabs.register(modEventBus);
         // 注册方块实体
         ModBlockEntities.BLOCK_ENTITIES.register(modEventBus);
-
+        // 初始化
         LOGGER.info("Create: Signal System mod initialized");
     }
 }
