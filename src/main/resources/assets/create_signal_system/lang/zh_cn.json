@@ -1,0 +1,14 @@
+{
+  "itemGroup.create_signal_system": "机械动力：信号系统",
+
+  "block.create_signal_system.signal_state_display": "信号状态显示器",
+
+  "item.create_signal_system.signal_state_display": "信号状态显示器",
+
+  "tooltip.create_signal_system.signal_state_display": "显示铁路信号组的状态",
+
+  "message.create_signal_system.signal_state.invalid": "无效",
+  "message.create_signal_system.signal_state.red": "红色",
+  "message.create_signal_system.signal_state.yellow": "黄色",
+  "message.create_signal_system.signal_state.green": "绿色"
+}

@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "create_signal_system:item/signal_group_scanner"
+  }
+}
