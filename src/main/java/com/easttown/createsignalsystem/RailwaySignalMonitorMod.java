@@ -1,5 +1,6 @@
 package com.easttown.createsignalsystem;
 
+import com.easttown.createsignalsystem.config.ModConfiguration;
 import com.easttown.createsignalsystem.init.ModBlocks;
 import com.easttown.createsignalsystem.init.ModBlockEntities;
 import com.easttown.createsignalsystem.init.ModCreativeModeTabs;
@@ -17,6 +18,9 @@ public class RailwaySignalMonitorMod {
 
     public RailwaySignalMonitorMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+
+        // 注册配置
+        ModConfiguration.register();
 
         // 注册创造模式物品栏
         ModItems.register(modEventBus);
