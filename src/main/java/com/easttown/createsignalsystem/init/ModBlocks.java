@@ -1,6 +1,6 @@
 package com.easttown.createsignalsystem.init;
 
-import com.easttown.createsignalsystem.RailwaySignalMonitorMod;
+import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.block.SignalStateDisplayBlock;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.track.TrackTargetingBlockItem;
@@ -20,7 +20,7 @@ import java.util.function.Supplier;
 
 public class ModBlocks {
     public static final DeferredRegister<Block> BLOCKS =
-            DeferredRegister.create(ForgeRegistries.BLOCKS, RailwaySignalMonitorMod.MOD_ID);
+            DeferredRegister.create(ForgeRegistries.BLOCKS, CreateSignalSystemMod.MOD_ID);
 
     // 信号状态显示器方块
     public static final RegistryObject<Block> SIGNAL_STATE_DISPLAY = registerBlock("signal_state_display",

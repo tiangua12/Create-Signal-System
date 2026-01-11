@@ -11,12 +11,12 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.slf4j.Logger;
 
-@Mod(RailwaySignalMonitorMod.MOD_ID)
-public class RailwaySignalMonitorMod {
+@Mod(CreateSignalSystemMod.MOD_ID)
+public class CreateSignalSystemMod {
     public static final String MOD_ID = "create_signal_system";
     public static final Logger LOGGER = LogUtils.getLogger();
 
-    public RailwaySignalMonitorMod() {
+    public CreateSignalSystemMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
         // 注册配置

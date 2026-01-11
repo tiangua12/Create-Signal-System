@@ -1,7 +1,7 @@
 package com.easttown.createsignalsystem.util;
 
 import com.easttown.createsignalsystem.config.ModConfiguration;
-import com.easttown.createsignalsystem.RailwaySignalMonitorMod;
+import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import org.slf4j.Logger;
 import org.slf4j.Marker;
 
@@ -25,7 +25,7 @@ public class ModLogger implements Logger {
      * 获取模组主日志记录器
      */
     public static ModLogger getLogger() {
-        return new ModLogger(RailwaySignalMonitorMod.LOGGER);
+        return new ModLogger(CreateSignalSystemMod.LOGGER);
     }
 
     /**

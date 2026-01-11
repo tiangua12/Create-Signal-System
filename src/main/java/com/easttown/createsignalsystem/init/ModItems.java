@@ -1,6 +1,6 @@
 package com.easttown.createsignalsystem.init;
 
-import com.easttown.createsignalsystem.RailwaySignalMonitorMod;
+import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.track.TrackTargetingBlockItem;
 import net.minecraft.world.item.BlockItem;
@@ -15,7 +15,7 @@ import java.util.function.Supplier;
 
 public class ModItems {
     public static final DeferredRegister<Item> ITEMS =
-            DeferredRegister.create(ForgeRegistries.ITEMS, RailwaySignalMonitorMod.MOD_ID);
+            DeferredRegister.create(ForgeRegistries.ITEMS, CreateSignalSystemMod.MOD_ID);
 
     // 信号状态控制器
   /*  public static final RegistryObject<Item> SIGNAL_STATE_CONTROLLER = ITEMS.register("signal_state_controller",

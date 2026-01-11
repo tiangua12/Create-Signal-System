@@ -1,6 +1,6 @@
 package com.easttown.createsignalsystem.init;
 
-import com.easttown.createsignalsystem.RailwaySignalMonitorMod;
+import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.init.ModBlocks;
 import com.easttown.createsignalsystem.init.ModItems;
 import net.minecraft.core.registries.Registries;
@@ -13,7 +13,7 @@ import net.minecraftforge.registries.RegistryObject;
 
 public class ModCreativeModeTabs {
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
-            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, RailwaySignalMonitorMod.MOD_ID);
+            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, CreateSignalSystemMod.MOD_ID);
 
     public static final RegistryObject<CreativeModeTab> TRACK_SIGNAL_DISPLAY_TAB = CREATIVE_MODE_TABS.register("track_signal_display_tab",
             () -> CreativeModeTab.builder()
