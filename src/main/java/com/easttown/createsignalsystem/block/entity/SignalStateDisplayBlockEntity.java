@@ -80,7 +80,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
 
     // 占用状态去抖动：防止信号快速闪烁
     private final int[] occupancyDebounceCounters = new int[4]; // 每个信号组的去抖动计数器
-    private static final int DEBOUNCE_THRESHOLD = 5; // 需要连续5个tick的相同状态才认为有效
+    private static final int DEBOUNCE_THRESHOLD = 4; // 需要连续4个tick（0.2秒）的相同状态才认为有效
 
     // 构造函数
     public SignalStateDisplayBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
@@ -725,29 +725,13 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
     private void updateOccupancyStates() {
         for (int i = 0; i < 4; i++) {
             if (signalGroupIds[i] == null) {
-                // 无信号组ID，立即视为占用（无需去抖动）
+                // 无信号组ID，视为占用
                 occupancyStates[i] = true;
-                occupancyDebounceCounters[i] = DEBOUNCE_THRESHOLD; // 设置为阈值以确保稳定
                 continue;
             }
 
-            boolean currentOccupied = isSignalGroupOccupied(signalGroupIds[i]);
-
-            // 去抖动逻辑：只有当状态持续一定时间后才改变
-            if (currentOccupied) {
-                // 当前检测到占用，增加计数器（上限为DEBOUNCE_THRESHOLD）
-                if (occupancyDebounceCounters[i] < DEBOUNCE_THRESHOLD) {
-                    occupancyDebounceCounters[i]++;
-                }
-            } else {
-                // 当前未占用，减少计数器（下限为0）
-                if (occupancyDebounceCounters[i] > 0) {
-                    occupancyDebounceCounters[i]--;
-                }
-            }
-
-            // 只有当计数器达到阈值时才认为被占用
-            occupancyStates[i] = occupancyDebounceCounters[i] >= DEBOUNCE_THRESHOLD;
+            // 直接检测占用状态
+            occupancyStates[i] = isSignalGroupOccupied(signalGroupIds[i]);
         }
     }
 
@@ -758,7 +742,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
             return false;
         }
 
-        // 1. 检查信号组是否有列车占用
+        // 1. 检查信号组是否有列车占用（传入null，预约也会被视为占用）
         boolean occupiedByTrain = group.isOccupiedUnless((SignalBoundary) null);
         if (occupiedByTrain) {
             return true;
@@ -768,12 +752,21 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
         // 遍历所有轨道图的所有信号边界
         for (TrackGraph graph : Create.RAILWAYS.trackNetworks.values()) {
             for (SignalBoundary boundary : graph.getPoints(EdgePointType.SIGNAL)) {
-                // 检查这个边界是否属于目标信号组
+                // 检查这个边界是否属于目标信号组，并确定在哪一侧
                 UUID group1 = boundary.groups.get(true);
                 UUID group2 = boundary.groups.get(false);
-                if ((group1 != null && group1.equals(groupId)) || (group2 != null && group2.equals(groupId))) {
-                    // 检查边界是否被强制设为红灯（任何一侧）
-                    if (boundary.isForcedRed(true) || boundary.isForcedRed(false)) {
+
+                boolean isGroup1 = group1 != null && group1.equals(groupId);
+                boolean isGroup2 = group2 != null && group2.equals(groupId);
+
+                if (isGroup1 || isGroup2) {
+                    // 只检查目标组所在侧的强制红灯状态
+                    // 如果组在primary侧（true），检查isForcedRed(true)
+                    // 如果组在secondary侧（false），检查isForcedRed(false)
+                    boolean forcedRed = (isGroup1 && boundary.isForcedRed(true)) ||
+                                       (isGroup2 && boundary.isForcedRed(false));
+
+                    if (forcedRed) {
                         return true;
                     }
                 }

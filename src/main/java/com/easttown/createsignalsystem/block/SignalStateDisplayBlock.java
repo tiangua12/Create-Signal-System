@@ -6,6 +6,7 @@ import com.easttown.createsignalsystem.init.ModItems;
 import com.simibubi.create.content.trains.signal.SignalBlock;
 import com.simibubi.create.content.trains.signal.SignalBlockEntity;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
+import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
@@ -22,7 +23,6 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import org.jetbrains.annotations.Nullable;
 
@@ -73,33 +73,104 @@ public class SignalStateDisplayBlock extends SignalBlock {
             SignalStateDisplayBlockEntity.FourAspectSignalState fourAspectState = display.getFourAspectState();
             String fourAspectStateName = fourAspectState.name();
             String localizedFourAspectState = getLocalizedFourAspectStateName(fourAspectState);
+            String fourAspectColor = getFourAspectStateColor(fourAspectState);
 
             player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "四显示信号状态: " + localizedFourAspectState + " (" + fourAspectStateName + ")"
+                    "§6四显示信号状态: " + fourAspectColor + localizedFourAspectState + " §7(" + fourAspectStateName + ")"
             ), false);
 
             // 显示基础信号状态（兼容）
             SignalBlockEntity.SignalState baseState = display.getState();
+            String baseStateColor = getBaseStateColor(baseState);
             player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "基础信号状态: " + baseState.name()
+                    "§6基础信号状态: " + baseStateColor + baseState.name()
             ), false);
 
             // 显示当前进路和强制红灯状态
+            String routeInfo = "§6当前进路: §e" + display.getCurrentRoute();
+            if (display.isForceRed()) {
+                routeInfo += " §c(强制红灯)";
+            }
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(routeInfo), false);
+
+            // 分隔线
             player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                    "当前进路: " + display.getCurrentRoute() + (display.isForceRed() ? " (强制红灯)" : "")
+                    "§8------------------------"
             ), false);
 
             // 如果连接了信号边界，显示更多信息
             SignalBoundary boundary = display.getSignal();
             if (boundary != null) {
                 player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                        "已连接到信号边界"
+                        "§6连接状态: §a已连接到信号边界"
                 ), false);
+                // 显示边界ID
+                if (boundary.id != null) {
+                    String boundaryId = boundary.id.toString();
+                    if (boundaryId.length() > 24) {
+                        boundaryId = boundaryId.substring(0, 12) + "..." + boundaryId.substring(boundaryId.length() - 12);
+                    }
+                    player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                            "§6边界ID: §b" + boundaryId
+                    ), false);
+                }
             } else {
                 player.displayClientMessage(net.minecraft.network.chat.Component.literal(
-                        "未连接到任何信号"
+                        "§6连接状态: §c未连接到任何信号"
                 ), false);
             }
+
+            // 分隔线
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§8------------------------"
+            ), false);
+
+            // 显示每个区间的详细信息
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§6=== 区间占用状态 ==="
+            ), false);
+
+            // 获取区间数据
+            UUID[] signalGroupIds = display.getSignalGroupIds();
+            boolean[] occupancyStates = display.getOccupancyStates();
+            String[] boundaryIds = display.getBoundaryIds();
+
+            // 区间描述数组
+            String[] intervalDescriptions = {"当前区间", "第一前方区间", "第二前方区间", "第三前方区间"};
+            String[] intervalSymbols = {"§f[0]", "§f[1]", "§f[2]", "§f[3]"};
+
+            for (int i = 0; i < 4; i++) {
+                String intervalDesc = intervalDescriptions[i];
+                String occupancyStatus = occupancyStates[i] ? "§c占用" : "§a空闲";
+                String signalGroupInfo;
+                if (signalGroupIds[i] != null) {
+                    String uuidStr = signalGroupIds[i].toString();
+                    signalGroupInfo = "§7信号组: §e" + uuidStr.substring(0, 8) + "...";
+                } else {
+                    signalGroupInfo = "§7无信号组";
+                }
+
+                String boundaryInfo;
+                if (boundaryIds[i] != null && !boundaryIds[i].isEmpty()) {
+                    // 截断边界ID显示，如果太长
+                    String boundaryId = boundaryIds[i];
+                    if (boundaryId.length() > 16) {
+                        boundaryId = boundaryId.substring(0, 8) + "..." + boundaryId.substring(boundaryId.length() - 8);
+                    }
+                    boundaryInfo = "§7边界: §b" + boundaryId;
+                } else {
+                    boundaryInfo = "§7无边界";
+                }
+
+                String intervalInfo = String.format("%s §f%s: %s | %s | %s",
+                    intervalSymbols[i], intervalDesc, occupancyStatus, signalGroupInfo, boundaryInfo);
+
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal(intervalInfo), false);
+            }
+
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                    "§6====================="
+            ), false);
         }
 
         return InteractionResult.SUCCESS;
@@ -151,6 +222,29 @@ public class SignalStateDisplayBlock extends SignalBlock {
             case GREEN: return "绿灯";
             case INVALID: return "无效";
             default: return "未知";
+        }
+    }
+
+    private String getFourAspectStateColor(SignalStateDisplayBlockEntity.FourAspectSignalState state) {
+        // 返回对应状态的颜色代码
+        switch (state) {
+            case RED: return "§c";      // 红色
+            case YELLOW: return "§e";   // 黄色
+            case GREEN_YELLOW: return "§a"; // 绿色（绿黄灯用绿色）
+            case GREEN: return "§a";    // 绿色
+            case INVALID: return "§7";  // 灰色
+            default: return "§f";       // 白色
+        }
+    }
+
+    private String getBaseStateColor(SignalBlockEntity.SignalState state) {
+        // 返回基础信号状态的颜色代码
+        switch (state) {
+            case RED: return "§c";      // 红色
+            case YELLOW: return "§e";   // 黄色
+            case GREEN: return "§a";    // 绿色
+            case INVALID: return "§7";  // 灰色
+            default: return "§f";       // 白色
         }
     }
 }
