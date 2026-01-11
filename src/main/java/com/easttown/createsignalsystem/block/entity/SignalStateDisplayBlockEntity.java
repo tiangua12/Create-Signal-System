@@ -673,13 +673,12 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         TravellingPoint.ITrackSelector routeSelector;
 
         if (route == 1) {
-            // 进路1：不做任何岔道转换，一直执行（选择第一个连接）
-            routeSelector = (g, pair) -> {
-                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-                return validTargets.isEmpty() ? null : validTargets.get(0);
-            };
+            // 进路1：不做任何岔道转换，一直直行（使用SteerDirection.NONE寻找直行方向）
+            routeSelector = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
         } else if (route == 2) {
-            // 进路2：第一个岔道左转，之后继续执行第一个连接
+            // 进路2：第一个岔道左转，之后直行
+            TravellingPoint.ITrackSelector leftSteer = travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0));
+            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
             boolean[] hasTurned = new boolean[]{false};
             routeSelector = (g, pair) -> {
                 List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
@@ -687,13 +686,15 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 if (validTargets.size() > 1 && !hasTurned[0]) {
                     // 第一个岔道，左转
                     hasTurned[0] = true;
-                    return travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0)).apply(g, pair);
+                    return leftSteer.apply(g, pair);
                 }
-                // 其他情况选择第一个连接
-                return validTargets.get(0);
+                // 其他情况直行
+                return straightSteer.apply(g, pair);
             };
         } else if (route == 3) {
-            // 进路3：两个岔道都左转
+            // 进路3：两个岔道都左转，之后直行
+            TravellingPoint.ITrackSelector leftSteer = travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0));
+            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
             int[] turnCount = new int[]{0};
             routeSelector = (g, pair) -> {
                 List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
@@ -701,13 +702,15 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 if (validTargets.size() > 1 && turnCount[0] < 2) {
                     // 前两个岔道左转
                     turnCount[0]++;
-                    return travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0)).apply(g, pair);
+                    return leftSteer.apply(g, pair);
                 }
-                // 两个岔道转完后，选择第一个连接
-                return validTargets.get(0);
+                // 两个岔道转完后，直行
+                return straightSteer.apply(g, pair);
             };
         } else if (route == 4) {
-            // 进路4：与2相反，右转
+            // 进路4：第一个岔道右转，之后直行
+            TravellingPoint.ITrackSelector rightSteer = travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0));
+            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
             boolean[] hasTurned = new boolean[]{false};
             routeSelector = (g, pair) -> {
                 List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
@@ -715,13 +718,15 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 if (validTargets.size() > 1 && !hasTurned[0]) {
                     // 第一个岔道，右转
                     hasTurned[0] = true;
-                    return travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0)).apply(g, pair);
+                    return rightSteer.apply(g, pair);
                 }
-                // 其他情况选择第一个连接
-                return validTargets.get(0);
+                // 其他情况直行
+                return straightSteer.apply(g, pair);
             };
         } else if (route == 5) {
-            // 进路5：两个岔道都右转
+            // 进路5：两个岔道都右转，之后直行
+            TravellingPoint.ITrackSelector rightSteer = travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0));
+            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
             int[] turnCount = new int[]{0};
             routeSelector = (g, pair) -> {
                 List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
@@ -729,17 +734,14 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 if (validTargets.size() > 1 && turnCount[0] < 2) {
                     // 前两个岔道右转
                     turnCount[0]++;
-                    return travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0)).apply(g, pair);
+                    return rightSteer.apply(g, pair);
                 }
-                // 两个岔道转完后，选择第一个连接
-                return validTargets.get(0);
+                // 两个岔道转完后，直行
+                return straightSteer.apply(g, pair);
             };
         } else {
-            // 进路6或其他：默认选择第一个连接
-            routeSelector = (g, pair) -> {
-                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-                return validTargets.isEmpty() ? null : validTargets.get(0);
-            };
+            // 进路6或其他：默认直行
+            routeSelector = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
         }
 
         logger.debug("[{}] 开始TravellingPoint.travel()，最大距离: {}，使用进路选择器（进路{}）", worldPosition, Double.MAX_VALUE, route);
@@ -750,7 +752,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 worldPosition, String.format("%.2f", furthestDistance[
                 0]), visitedBoundaryIds.size() - 1); // 减去当前边界
 
-        // 检查移动距离是否为0，如果是，给出明确的轨道结构诊断
+ /*       // 检查移动距离是否为0，如果是，给出明确的轨道结构诊断
         if (actualDistance == 0.0) {
             logger.warn("[{}] ⚠️ TravellingPoint移动距离为0！这意味着轨道结构有限。", worldPosition);
             logger.warn("[{}] ⚠️ 当前轨道: {} -> {} (长度: {}m)",
@@ -761,7 +763,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                     worldPosition, graph.getNodes().size(), estimateEdgeCount(graph));
             logger.warn("[{}] ⚠️ 解决方案: 在现有轨道前方至少延伸3段轨道，每段放置一个信号机", worldPosition);
         }
-
+*/
         // 更新移动统计
         travelCallCount++;
         lastTravelDistance = actualDistance;
@@ -1190,29 +1192,29 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         String stateName = getFourAspectStateDisplayName(fourAspectState);
         ChatFormatting stateColor = getFourAspectStateColor(fourAspectState);
 
-        Component signalLine = Component.literal("   四显示信号: ")
+        Component signalLine = Component.literal("    四显示信号: ")
                 .append(Component.literal(stateName).withStyle(stateColor));
         tooltip.add(signalLine);
 
         // 添加基础信号状态
         SignalBlockEntity.SignalState baseState = getState();
         ChatFormatting baseColor = getBaseStateColor(baseState);
-        Component baseLine = Component.literal("   基础信号: ")
+        Component baseLine = Component.literal("    基础信号: ")
                 .append(Component.literal(getBaseStateDisplayName(baseState)).withStyle(baseColor));
         tooltip.add(baseLine);
 
         // 添加进路信息
         int currentRoute = getCurrentRoute();
-        tooltip.add(Component.literal("   当前进路: " + currentRoute).withStyle(ChatFormatting.YELLOW));
+        tooltip.add(Component.literal("    当前进路: " + currentRoute).withStyle(ChatFormatting.YELLOW));
 
         // 添加强制红灯状态
         if (isForceRed()) {
-            tooltip.add(Component.literal("   强制红灯: 激活").withStyle(ChatFormatting.RED));
+            tooltip.add(Component.literal("    强制红灯: 激活").withStyle(ChatFormatting.RED));
         }
 
         // 添加信号组占用状态（简要信息）
         boolean[] occupancyStates = getOccupancyStates();
-        String[] intervalNames = {"   当前", "   前方1", "   前方2", "   前方3"};
+        String[] intervalNames = {"    当前", "    前方1", "    前方2", "    前方3"};
 
         for (int i = 0; i < 4; i++) {
             ChatFormatting statusColor = occupancyStates[
