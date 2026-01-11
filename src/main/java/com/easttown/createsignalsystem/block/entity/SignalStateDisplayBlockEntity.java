@@ -13,12 +13,15 @@ import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.Create;
 import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
+import com.simibubi.create.content.equipment.goggles.IHaveGoggleInformation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.*;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.graph.TrackEdge;
@@ -27,7 +30,7 @@ import com.simibubi.create.content.trains.entity.TravellingPoint;
 import com.simibubi.create.foundation.utility.Couple;
 import com.simibubi.create.foundation.utility.Pair;
 
-public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
+public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements IHaveGoggleInformation {
 
     // 四显示信号状态枚举
     public enum FourAspectSignalState {
@@ -721,7 +724,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
         return null;
     }
 
-    // 更新所有信号组的占用状态
+    // 更新所有信号组的占用状态（只检测物理占用，预约不算占用）
     private void updateOccupancyStates() {
         for (int i = 0; i < 4; i++) {
             if (signalGroupIds[i] == null) {
@@ -730,21 +733,21 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
                 continue;
             }
 
-            // 直接检测占用状态
+            // 检测占用状态（只检测物理占用，预约不算占用）
             occupancyStates[i] = isSignalGroupOccupied(signalGroupIds[i]);
         }
     }
 
-    // 检查信号组是否占用（包括强制红灯）
+    // 检查信号组是否占用（包括强制红灯，只检测物理占用，预约不算占用）
     private boolean isSignalGroupOccupied(UUID groupId) {
         SignalEdgeGroup group = Create.RAILWAYS.signalEdgeGroups.get(groupId);
         if (group == null) {
             return false;
         }
 
-        // 1. 检查信号组是否有列车占用（传入null，预约也会被视为占用）
-        boolean occupiedByTrain = group.isOccupiedUnless((SignalBoundary) null);
-        if (occupiedByTrain) {
+        // 1. 检查信号组是否有列车物理占用（预约不算占用）
+        // 只检查当前信号组中的列车，忽略预约和交叉组
+        if (!group.trains.isEmpty()) {
             return true;
         }
 
@@ -1111,5 +1114,90 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
         double avgConnections = (double) totalConnections / countedNodes;
         int estimatedEdges = (int) Math.round(avgConnections * locations.size() / 2.0);
         return Math.max(estimatedEdges, 0);
+    }
+
+    // IHaveGoggleInformation接口实现
+    @Override
+    public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
+        // 添加四显示信号状态信息
+        FourAspectSignalState fourAspectState = getFourAspectState();
+        String stateName = getFourAspectStateDisplayName(fourAspectState);
+        ChatFormatting stateColor = getFourAspectStateColor(fourAspectState);
+
+        Component signalLine = Component.literal("四显示信号: ")
+                .append(Component.literal(stateName).withStyle(stateColor));
+        tooltip.add(signalLine);
+
+        // 添加基础信号状态
+        SignalBlockEntity.SignalState baseState = getState();
+        ChatFormatting baseColor = getBaseStateColor(baseState);
+        Component baseLine = Component.literal("基础信号: ")
+                .append(Component.literal(getBaseStateDisplayName(baseState)).withStyle(baseColor));
+        tooltip.add(baseLine);
+
+        // 添加进路信息
+        int currentRoute = getCurrentRoute();
+        tooltip.add(Component.literal("当前进路: " + currentRoute).withStyle(ChatFormatting.YELLOW));
+
+        // 添加强制红灯状态
+        if (isForceRed()) {
+            tooltip.add(Component.literal("强制红灯: 激活").withStyle(ChatFormatting.RED));
+        }
+
+        // 添加信号组占用状态（简要信息）
+        boolean[] occupancyStates = getOccupancyStates();
+        String[] intervalNames = {"当前", "前方1", "前方2", "前方3"};
+
+        for (int i = 0; i < 4; i++) {
+            ChatFormatting statusColor = occupancyStates[i] ? ChatFormatting.RED : ChatFormatting.GREEN;
+            String statusText = occupancyStates[i] ? "占用" : "空闲";
+            Component line = Component.literal(intervalNames[i] + ": ")
+                    .append(Component.literal(statusText).withStyle(statusColor));
+            tooltip.add(line);
+        }
+
+        return true;
+    }
+
+    private String getFourAspectStateDisplayName(FourAspectSignalState state) {
+        switch (state) {
+            case RED: return "红灯";
+            case YELLOW: return "黄灯";
+            case GREEN_YELLOW: return "绿黄灯";
+            case GREEN: return "绿灯";
+            case INVALID: return "无效";
+            default: return "未知";
+        }
+    }
+
+    private ChatFormatting getFourAspectStateColor(FourAspectSignalState state) {
+        switch (state) {
+            case RED: return ChatFormatting.RED;
+            case YELLOW: return ChatFormatting.YELLOW;
+            case GREEN_YELLOW: return ChatFormatting.GREEN;
+            case GREEN: return ChatFormatting.GREEN;
+            case INVALID: return ChatFormatting.GRAY;
+            default: return ChatFormatting.WHITE;
+        }
+    }
+
+    private String getBaseStateDisplayName(SignalBlockEntity.SignalState state) {
+        switch (state) {
+            case RED: return "红灯";
+            case YELLOW: return "黄灯";
+            case GREEN: return "绿灯";
+            case INVALID: return "无效";
+            default: return "未知";
+        }
+    }
+
+    private ChatFormatting getBaseStateColor(SignalBlockEntity.SignalState state) {
+        switch (state) {
+            case RED: return ChatFormatting.RED;
+            case YELLOW: return ChatFormatting.YELLOW;
+            case GREEN: return ChatFormatting.GREEN;
+            case INVALID: return ChatFormatting.GRAY;
+            default: return ChatFormatting.WHITE;
+        }
     }
 }
