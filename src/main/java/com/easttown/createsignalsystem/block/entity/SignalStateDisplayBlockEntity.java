@@ -27,10 +27,13 @@ import com.simibubi.create.content.trains.graph.TrackNode;
 import com.simibubi.create.content.trains.graph.TrackEdge;
 import com.simibubi.create.content.trains.graph.TrackNodeLocation;
 import com.simibubi.create.content.trains.entity.TravellingPoint;
+import com.simibubi.create.content.trains.entity.TravellingPoint.SteerDirection;
 import com.simibubi.create.foundation.utility.Couple;
 import com.simibubi.create.foundation.utility.Pair;
+import net.minecraft.world.phys.Vec3;
 
-public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements IHaveGoggleInformation {
+public class SignalStateDisplayBlockEntity extends SignalBlockEntity
+        implements IHaveGoggleInformation {
 
     // 四显示信号状态枚举
     public enum FourAspectSignalState {
@@ -259,6 +262,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements 
     private void findForwardSignalGroups(SignalBoundary currentBoundary) {
         logger.debug("[{}] === findForwardSignalGroups 开始 ===", worldPosition);
         logger.debug("[{}] 当前边界ID: {}", worldPosition, currentBoundary.id);
+        logger.debug("[{}] 当前进路: {}", worldPosition, getCurrentRoute());
 
         // 清空前方的槽位（1-3）
         for (int i = 1; i < 4; i++) {
@@ -664,22 +668,84 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements 
         // 注意：TravellingPoint内部有visited集合避免重复访问同一条边，可以处理环形铁路
         logger.debug("[{}] 轨道图信息: 节点数={}, 边数≈{}",
                 worldPosition, graph.getNodes().size(), estimateEdgeCount(graph));
-        // 创建自定义轨道选择器（总是选择第一个可用连接，比随机选择更确定）
-        TravellingPoint.ITrackSelector deterministicSelector = (g, pair) -> {
-            boolean forward = pair.getFirst();
-            List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-            if (validTargets.isEmpty()) {
-                return null;
-            }
-            // 总是选择第一个可用连接
-            return validTargets.get(0);
-        };
+        // 创建自定义轨道选择器（根据进路编号选择转向规则）
+        int route = getCurrentRoute();
+        TravellingPoint.ITrackSelector routeSelector;
 
-        logger.debug("[{}] 开始TravellingPoint.travel()，最大距离: {}，使用确定性选择器", worldPosition, Double.MAX_VALUE);
-        double actualDistance = travellingPoint.travel(graph, Double.MAX_VALUE, deterministicSelector, signalListener);
+        if (route == 1) {
+            // 进路1：不做任何岔道转换，一直执行（选择第一个连接）
+            routeSelector = (g, pair) -> {
+                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+                return validTargets.isEmpty() ? null : validTargets.get(0);
+            };
+        } else if (route == 2) {
+            // 进路2：第一个岔道左转，之后继续执行第一个连接
+            boolean[] hasTurned = new boolean[]{false};
+            routeSelector = (g, pair) -> {
+                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+                if (validTargets.isEmpty()) return null;
+                if (validTargets.size() > 1 && !hasTurned[0]) {
+                    // 第一个岔道，左转
+                    hasTurned[0] = true;
+                    return travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0)).apply(g, pair);
+                }
+                // 其他情况选择第一个连接
+                return validTargets.get(0);
+            };
+        } else if (route == 3) {
+            // 进路3：两个岔道都左转
+            int[] turnCount = new int[]{0};
+            routeSelector = (g, pair) -> {
+                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+                if (validTargets.isEmpty()) return null;
+                if (validTargets.size() > 1 && turnCount[0] < 2) {
+                    // 前两个岔道左转
+                    turnCount[0]++;
+                    return travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0)).apply(g, pair);
+                }
+                // 两个岔道转完后，选择第一个连接
+                return validTargets.get(0);
+            };
+        } else if (route == 4) {
+            // 进路4：与2相反，右转
+            boolean[] hasTurned = new boolean[]{false};
+            routeSelector = (g, pair) -> {
+                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+                if (validTargets.isEmpty()) return null;
+                if (validTargets.size() > 1 && !hasTurned[0]) {
+                    // 第一个岔道，右转
+                    hasTurned[0] = true;
+                    return travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0)).apply(g, pair);
+                }
+                // 其他情况选择第一个连接
+                return validTargets.get(0);
+            };
+        } else if (route == 5) {
+            // 进路5：两个岔道都右转
+            int[] turnCount = new int[]{0};
+            routeSelector = (g, pair) -> {
+                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+                if (validTargets.isEmpty()) return null;
+                if (validTargets.size() > 1 && turnCount[0] < 2) {
+                    // 前两个岔道右转
+                    turnCount[0]++;
+                    return travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0)).apply(g, pair);
+                }
+                // 两个岔道转完后，选择第一个连接
+                return validTargets.get(0);
+            };
+        } else {
+            // 进路6或其他：默认选择第一个连接
+            routeSelector = (g, pair) -> {
+                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+                return validTargets.isEmpty() ? null : validTargets.get(0);
+            };
+        }
+
+        logger.debug("[{}] 开始TravellingPoint.travel()，最大距离: {}，使用进路选择器（进路{}）", worldPosition, Double.MAX_VALUE, route);
+        double actualDistance = travellingPoint.travel(graph, Double.MAX_VALUE, routeSelector, signalListener);
         logger.debug("[{}] TravellingPoint.travel()完成，实际移动距离: {}m", worldPosition, String.format("%.2f", actualDistance));
-        logger.debug("[{}] 监听器收集统计: {}个信号组", worldPosition, collectedCountContainer[
-        0]);
+        logger.debug("[{}] 监听器收集统计: {}个信号组", worldPosition, collectedCountContainer[0]);
         logger.debug("[{}] 循环检测结果: 最远移动距离={}米, 已访问边界数={}",
                 worldPosition, String.format("%.2f", furthestDistance[
                 0]), visitedBoundaryIds.size() - 1); // 减去当前边界
@@ -767,7 +833,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements 
                     // 如果组在primary侧（true），检查isForcedRed(true)
                     // 如果组在secondary侧（false），检查isForcedRed(false)
                     boolean forcedRed = (isGroup1 && boundary.isForcedRed(true)) ||
-                                       (isGroup2 && boundary.isForcedRed(false));
+                            (isGroup2 && boundary.isForcedRed(false));
 
                     if (forcedRed) {
                         return true;
@@ -926,16 +992,16 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements 
 
         // 向后兼容：如果存在旧的SelectedSignalGroupId，且第一个槽位为空，则将其放入第一个槽位
         // if (tag.contains("SelectedSignalGroupId")) {
-            // try {
-                // UUID oldId = tag.getUUID("SelectedSignalGroupId");
-                // if (signalGroupIds[0] == null && oldId != null) {
-                    // signalGroupIds[0] = oldId;
-                    // setChanged(); // 标记需要保存新格式
-                // }
-            // } catch (Exception e) {
-                // // 无效的UUID格式，跳过
-                // logger.debug("无效的SelectedSignalGroupId格式，跳过迁移");
-            // }
+        // try {
+        // UUID oldId = tag.getUUID("SelectedSignalGroupId");
+        // if (signalGroupIds[0] == null && oldId != null) {
+        // signalGroupIds[0] = oldId;
+        // setChanged(); // 标记需要保存新格式
+        // }
+        // } catch (Exception e) {
+        // // 无效的UUID格式，跳过
+        // logger.debug("无效的SelectedSignalGroupId格式，跳过迁移");
+        // }
         // }
 
         // 读取TravellingPoint移动统计（可选，旧版本可能没有这些字段）
@@ -1124,32 +1190,33 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements 
         String stateName = getFourAspectStateDisplayName(fourAspectState);
         ChatFormatting stateColor = getFourAspectStateColor(fourAspectState);
 
-        Component signalLine = Component.literal("四显示信号: ")
+        Component signalLine = Component.literal("   四显示信号: ")
                 .append(Component.literal(stateName).withStyle(stateColor));
         tooltip.add(signalLine);
 
         // 添加基础信号状态
         SignalBlockEntity.SignalState baseState = getState();
         ChatFormatting baseColor = getBaseStateColor(baseState);
-        Component baseLine = Component.literal("基础信号: ")
+        Component baseLine = Component.literal("   基础信号: ")
                 .append(Component.literal(getBaseStateDisplayName(baseState)).withStyle(baseColor));
         tooltip.add(baseLine);
 
         // 添加进路信息
         int currentRoute = getCurrentRoute();
-        tooltip.add(Component.literal("当前进路: " + currentRoute).withStyle(ChatFormatting.YELLOW));
+        tooltip.add(Component.literal("   当前进路: " + currentRoute).withStyle(ChatFormatting.YELLOW));
 
         // 添加强制红灯状态
         if (isForceRed()) {
-            tooltip.add(Component.literal("强制红灯: 激活").withStyle(ChatFormatting.RED));
+            tooltip.add(Component.literal("   强制红灯: 激活").withStyle(ChatFormatting.RED));
         }
 
         // 添加信号组占用状态（简要信息）
         boolean[] occupancyStates = getOccupancyStates();
-        String[] intervalNames = {"当前", "前方1", "前方2", "前方3"};
+        String[] intervalNames = {"   当前", "   前方1", "   前方2", "   前方3"};
 
         for (int i = 0; i < 4; i++) {
-            ChatFormatting statusColor = occupancyStates[i] ? ChatFormatting.RED : ChatFormatting.GREEN;
+            ChatFormatting statusColor = occupancyStates[
+                    i] ? ChatFormatting.RED : ChatFormatting.GREEN;
             String statusText = occupancyStates[i] ? "占用" : "空闲";
             Component line = Component.literal(intervalNames[i] + ": ")
                     .append(Component.literal(statusText).withStyle(statusColor));
@@ -1161,43 +1228,65 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity implements 
 
     private String getFourAspectStateDisplayName(FourAspectSignalState state) {
         switch (state) {
-            case RED: return "红灯";
-            case YELLOW: return "黄灯";
-            case GREEN_YELLOW: return "绿黄灯";
-            case GREEN: return "绿灯";
-            case INVALID: return "无效";
-            default: return "未知";
+            case RED:
+                return "红灯";
+            case YELLOW:
+                return "黄灯";
+            case GREEN_YELLOW:
+                return "绿黄灯";
+            case GREEN:
+                return "绿灯";
+            case INVALID:
+                return "无效";
+            default:
+                return "未知";
         }
     }
 
     private ChatFormatting getFourAspectStateColor(FourAspectSignalState state) {
         switch (state) {
-            case RED: return ChatFormatting.RED;
-            case YELLOW: return ChatFormatting.YELLOW;
-            case GREEN_YELLOW: return ChatFormatting.GREEN;
-            case GREEN: return ChatFormatting.GREEN;
-            case INVALID: return ChatFormatting.GRAY;
-            default: return ChatFormatting.WHITE;
+            case RED:
+                return ChatFormatting.RED;
+            case YELLOW:
+                return ChatFormatting.YELLOW;
+            case GREEN_YELLOW:
+                return ChatFormatting.GREEN;
+            case GREEN:
+                return ChatFormatting.GREEN;
+            case INVALID:
+                return ChatFormatting.GRAY;
+            default:
+                return ChatFormatting.WHITE;
         }
     }
 
     private String getBaseStateDisplayName(SignalBlockEntity.SignalState state) {
         switch (state) {
-            case RED: return "红灯";
-            case YELLOW: return "黄灯";
-            case GREEN: return "绿灯";
-            case INVALID: return "无效";
-            default: return "未知";
+            case RED:
+                return "红灯";
+            case YELLOW:
+                return "黄灯";
+            case GREEN:
+                return "绿灯";
+            case INVALID:
+                return "无效";
+            default:
+                return "未知";
         }
     }
 
     private ChatFormatting getBaseStateColor(SignalBlockEntity.SignalState state) {
         switch (state) {
-            case RED: return ChatFormatting.RED;
-            case YELLOW: return ChatFormatting.YELLOW;
-            case GREEN: return ChatFormatting.GREEN;
-            case INVALID: return ChatFormatting.GRAY;
-            default: return ChatFormatting.WHITE;
+            case RED:
+                return ChatFormatting.RED;
+            case YELLOW:
+                return ChatFormatting.YELLOW;
+            case GREEN:
+                return ChatFormatting.GREEN;
+            case INVALID:
+                return ChatFormatting.GRAY;
+            default:
+                return ChatFormatting.WHITE;
         }
     }
 }
