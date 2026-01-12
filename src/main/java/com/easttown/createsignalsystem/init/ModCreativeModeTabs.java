@@ -12,17 +12,17 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 
 public class ModCreativeModeTabs {
-    public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS =
-            DeferredRegister.create(Registries.CREATIVE_MODE_TAB, CreateSignalSystemMod.MOD_ID);
+    public static final DeferredRegister<
+            CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, CreateSignalSystemMod.MOD_ID);
 
-    public static final RegistryObject<CreativeModeTab> TRACK_SIGNAL_DISPLAY_TAB = CREATIVE_MODE_TABS.register("track_signal_display_tab",
+    public static final RegistryObject<
+            CreativeModeTab> TRACK_SIGNAL_DISPLAY_TAB = CREATIVE_MODE_TABS.register("track_signal_display_tab",
             () -> CreativeModeTab.builder()
                     .title(Component.translatable("itemGroup.create_signal_system"))
                     .icon(() -> new ItemStack(ModBlocks.SIGNAL_STATE_DISPLAY.get()))
                     .displayItems((parameters, output) -> {
                         // 添加所有mod物品到这里
                         output.accept(ModBlocks.SIGNAL_STATE_DISPLAY.get());
-                   //     output.accept(ModItems.SIGNAL_STATE_CONTROLLER.get());
                     })
                     .build());
 

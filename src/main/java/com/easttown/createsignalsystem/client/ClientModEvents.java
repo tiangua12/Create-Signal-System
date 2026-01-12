@@ -28,6 +28,6 @@ public class ClientModEvents {
                 SignalRenderer::new
         );
 
-        CreateSignalSystemMod.LOGGER.info("注册信号状态显示器渲染器成功");
+    //    CreateSignalSystemMod.LOGGER.info("注册信号状态显示器渲染器成功");
     }
 }

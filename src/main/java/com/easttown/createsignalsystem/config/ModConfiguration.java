@@ -9,27 +9,16 @@ public class ModConfiguration {
     public static final ForgeConfigSpec SPEC;
 
     // 配置项定义
-    public static final ForgeConfigSpec.BooleanValue ENABLE_DEBUG_LOGGING;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_DETAILED_ALGORITHM_TRACING;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_PERFORMANCE_LOGGING;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_DEBUG_OUTPUT;
 
     static {
         BUILDER.push("general").comment("通用配置");
 
-        ENABLE_DEBUG_LOGGING = BUILDER
+        ENABLE_DEBUG_OUTPUT = BUILDER
                 .comment("启用调试日志输出")
-                .comment("如果启用，将显示详细的调试信息")
-                .define("enableDebugLogging", false);
-
-        ENABLE_DETAILED_ALGORITHM_TRACING = BUILDER
-                .comment("启用详细算法跟踪")
-                .comment("如果启用，将显示信号算法的详细执行步骤")
-                .define("enableDetailedAlgorithmTracing", false);
-
-        ENABLE_PERFORMANCE_LOGGING = BUILDER
-                .comment("启用性能日志")
-                .comment("如果启用，将记录算法执行时间等性能信息")
-                .define("enablePerformanceLogging", false);
+                .comment("如果启用，将显示所有调试信息（包括算法跟踪和性能日志）")
+                .comment("禁用时，只输出info、warn、error级别的关键日志")
+                .define("enableDebugOutput", false);
 
         BUILDER.pop();
         SPEC = BUILDER.build();
@@ -47,23 +36,9 @@ public class ModConfiguration {
     }
 
     /**
-     * 检查是否启用调试日志
+     * 检查是否启用调试输出
      */
-    public static boolean isDebugLoggingEnabled() {
-        return ENABLE_DEBUG_LOGGING.get();
-    }
-
-    /**
-     * 检查是否启用详细算法跟踪
-     */
-    public static boolean isDetailedAlgorithmTracingEnabled() {
-        return ENABLE_DETAILED_ALGORITHM_TRACING.get();
-    }
-
-    /**
-     * 检查是否启用性能日志
-     */
-    public static boolean isPerformanceLoggingEnabled() {
-        return ENABLE_PERFORMANCE_LOGGING.get();
+    public static boolean isDebugOutputEnabled() {
+        return ENABLE_DEBUG_OUTPUT.get();
     }
 }

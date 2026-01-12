@@ -2,7 +2,7 @@ package com.easttown.createsignalsystem.block.entity;
 
 import com.easttown.createsignalsystem.init.ModBlockEntities;
 import com.easttown.createsignalsystem.CreateSignalSystemMod;
-import com.easttown.createsignalsystem.util.ModLogger;
+import com.easttown.createsignalsystem.util.SimpleLogger;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import javax.annotation.Nullable;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
@@ -57,8 +57,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
     // 基础信号字段（继承自SignalBlockEntity）
     // edgePoint、state、lastReportedPower 已从父类继承
 
-    // 日志记录器
-    private final ModLogger logger = ModLogger.getLogger();
+    // 日志记录器 (使用SimpleLogger静态方法)
 
     // 四显示信号数据
     private final UUID[] signalGroupIds = new UUID[4]; // 4个信号组ID (0:当前, 1-3:前方)
@@ -155,20 +154,20 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         updateOccupancyStates();
 
         // 调试：显示信号组ID和占用状态
-        logger.debug("[{}] 信号组ID状态: [0]={}, [1]={}, [2]={}, [3]={}",
+        SimpleLogger.debug("[{}] 信号组ID状态: [0]={}, [1]={}, [2]={}, [3]={}",
                 worldPosition, signalGroupIds[0], signalGroupIds[1], signalGroupIds[
                 2], signalGroupIds[3]);
-        logger.debug("[{}] 占用状态: [0]={}, [1]={}, [2]={}, [3]={}",
+        SimpleLogger.debug("[{}] 占用状态: [0]={}, [1]={}, [2]={}, [3]={}",
                 worldPosition, occupancyStates[0], occupancyStates[1], occupancyStates[
                 2], occupancyStates[3]);
 
         // 6. 计算四显示信号状态
         fourAspectState = calculateFourAspectSignal();
-        logger.debug("[{}] 计算四显示信号状态: {}", worldPosition, fourAspectState);
+        SimpleLogger.debug("[{}] 计算四显示信号状态: {}", worldPosition, fourAspectState);
 
         // 7. 转换为原始信号状态并更新
         SignalBlockEntity.SignalState newState = convertToSignalState(fourAspectState);
-        logger.debug("[{}] 转换为基础信号状态: {}", worldPosition, newState);
+        SimpleLogger.debug("[{}] 转换为基础信号状态: {}", worldPosition, newState);
         // 只有当状态实际变化时才调用enterState，避免不必要的更新
         if (newState != getState()) {
             enterState(newState);
@@ -239,14 +238,14 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         boolean isSecondSide = boundary.blockEntities.getSecond().containsKey(worldPosition);
 
         if (!isFirstSide && !isSecondSide) {
-            logger.warn("方块不在边界{}的任何一侧！位置: {}", boundary.id, worldPosition);
+            SimpleLogger.warn("方块不在边界{}的任何一侧！位置: {}", boundary.id, worldPosition);
             signalGroupIds[0] = null;
             boundaryIds[0] = boundary.id.toString();
             return;
         }
 
         boolean primary = isFirstSide; // 在第一侧为true，在第二侧为false
-        logger.debug("updateCurrentSignalGroupId: 边界={}, 在第一侧={}, 在第二侧={}, primary={}",
+        SimpleLogger.debug("updateCurrentSignalGroupId: 边界={}, 在第一侧={}, 在第二侧={}, primary={}",
                 boundary.id, isFirstSide, isSecondSide, primary);
 
         // 获取该侧的信号组ID（使用Couple的正确访问方式）
@@ -254,15 +253,15 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         signalGroupIds[0] = groupId;
         boundaryIds[0] = boundary.id.toString();
 
-        logger.debug("当前信号组ID[0]: {}, 边界groups: first={}, second={}",
+        SimpleLogger.debug("当前信号组ID[0]: {}, 边界groups: first={}, second={}",
                 groupId, boundary.groups.getFirst(), boundary.groups.getSecond());
     }
 
     // 使用TravellingPoint寻路收集前方信号组ID（索引1-3）
     private void findForwardSignalGroups(SignalBoundary currentBoundary) {
-        logger.debug("[{}] === findForwardSignalGroups 开始 ===", worldPosition);
-        logger.debug("[{}] 当前边界ID: {}", worldPosition, currentBoundary.id);
-        logger.debug("[{}] 当前进路: {}", worldPosition, getCurrentRoute());
+        SimpleLogger.debug("[{}] === findForwardSignalGroups 开始 ===", worldPosition);
+        SimpleLogger.debug("[{}] 当前边界ID: {}", worldPosition, currentBoundary.id);
+        SimpleLogger.debug("[{}] 当前进路: {}", worldPosition, getCurrentRoute());
 
         // 清空前方的槽位（1-3）
         for (int i = 1; i < 4; i++) {
@@ -273,22 +272,22 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         // 获取当前边界所在的轨道图和位置
         Couple<TrackNodeLocation> nodeLocations = currentBoundary.edgeLocation;
         if (nodeLocations == null) {
-            logger.debug("[{}] ✗ 边界没有节点位置信息", worldPosition);
+            SimpleLogger.debug("[{}] ✗ 边界没有节点位置信息", worldPosition);
             return;
         }
-        logger.debug("[{}] 边界节点位置: {} -> {}", worldPosition, nodeLocations.getFirst(), nodeLocations.getSecond());
+        SimpleLogger.debug("[{}] 边界节点位置: {} -> {}", worldPosition, nodeLocations.getFirst(), nodeLocations.getSecond());
 
         // 查找包含当前边界的轨道图
         TrackGraph graph = findContainingGraph(nodeLocations);
         if (graph == null) {
-            logger.debug("[{}] ✗ 找不到包含边界的轨道图", worldPosition);
+            SimpleLogger.debug("[{}] ✗ 找不到包含边界的轨道图", worldPosition);
             return;
         }
-        logger.debug("[{}] ✓ 找到轨道图，ID: {}", worldPosition, graph.id);
+        SimpleLogger.debug("[{}] ✓ 找到轨道图，ID: {}", worldPosition, graph.id);
 
         // 输出轨道图详细信息
         Set<TrackNodeLocation> allNodeLocations = graph.getNodes();
-        logger.debug("[{}] 轨道图规模: 节点数={}", worldPosition, allNodeLocations.size());
+        SimpleLogger.debug("[{}] 轨道图规模: 节点数={}", worldPosition, allNodeLocations.size());
 
         // 计算边数和输出节点连接情况（最多前10个节点，避免日志过多）
         int totalConnections = 0;
@@ -303,7 +302,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
             if (nodeIndex < 10) {
                 int connections = graph.getConnectionsFrom(node).size();
                 totalConnections += connections;
-                logger.debug("[{}]   节点{}: 位置={}, 连接数={}",
+                SimpleLogger.debug("[{}]   节点{}: 位置={}, 连接数={}",
                         worldPosition, nodeIndex, location, connections);
                 nodeIndex++;
             }
@@ -311,37 +310,37 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
         // 估计边数：总连接数除以2（因为每条边被两个节点记录）
         int estimatedEdges = totalConnections / 2;
-        logger.debug("[{}]   估计边数: {} (基于{}个节点的连接统计)", worldPosition, estimatedEdges, Math.min(nodeList.size(), 10));
+        SimpleLogger.debug("[{}]   估计边数: {} (基于{}个节点的连接统计)", worldPosition, estimatedEdges, Math.min(nodeList.size(), 10));
         if (allNodeLocations.size() > 10) {
-            logger.debug("[{}]   ... 还有{}个节点未显示", worldPosition, allNodeLocations.size() - 10);
+            SimpleLogger.debug("[{}]   ... 还有{}个节点未显示", worldPosition, allNodeLocations.size() - 10);
         }
 
         // 检查当前边界连接的节点是否在轨道图中
         TrackNode nodeA = graph.locateNode(nodeLocations.getFirst());
         TrackNode nodeB = graph.locateNode(nodeLocations.getSecond());
         if (nodeA == null || nodeB == null) {
-            logger.debug("[{}] ✗ 无法定位节点: nodeA={}, nodeB={}", worldPosition, nodeA != null, nodeB != null);
-            logger.debug("[{}]   可用节点位置:", worldPosition);
+            SimpleLogger.debug("[{}] ✗ 无法定位节点: nodeA={}, nodeB={}", worldPosition, nodeA != null, nodeB != null);
+            SimpleLogger.debug("[{}]   可用节点位置:", worldPosition);
             for (TrackNode node : nodeList) {
-                logger.debug("[{}]     - {}", worldPosition, node.getLocation());
+                SimpleLogger.debug("[{}]     - {}", worldPosition, node.getLocation());
             }
             return;
         }
-        logger.debug("[{}] ✓ 定位到节点: nodeA={}, nodeB={}", worldPosition, nodeA.getLocation(), nodeB.getLocation());
+        SimpleLogger.debug("[{}] ✓ 定位到节点: nodeA={}, nodeB={}", worldPosition, nodeA.getLocation(), nodeB.getLocation());
 
         // 确定前进方向（信号点标记的方向）
         boolean isFirstSide = currentBoundary.blockEntities.getFirst().containsKey(worldPosition);
         boolean isSecondSide = currentBoundary.blockEntities.getSecond().containsKey(worldPosition);
 
         if (!isFirstSide && !isSecondSide) {
-            logger.error("方块不在边界{}的任何一侧！无法确定前进方向", currentBoundary.id);
+            SimpleLogger.error("方块不在边界{}的任何一侧！无法确定前进方向", currentBoundary.id);
             return;
         }
 
         // 方块在哪一侧，primary就为true/false
         // 如果方块在第一侧，primary=true；如果在第二侧，primary=false
         boolean primary = isFirstSide;
-        logger.debug("方块位置: {}, 在第一侧: {}, 在第二侧: {}, primary: {}",
+        SimpleLogger.debug("方块位置: {}, 在第一侧: {}, 在第二侧: {}, primary: {}",
                 worldPosition, isFirstSide, isSecondSide, primary);
 
         // 保存节点位置用于比较
@@ -366,7 +365,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
             if (targetNode.getLocation().equals(endLocation)) {
                 startEdge = entry.getValue();
                 edgeBackwards = false; // 正向边
-                logger.debug("✓ 找到边: 从 {} 到 {}", startNode.getLocation(), targetNode.getLocation());
+                SimpleLogger.debug("✓ 找到边: 从 {} 到 {}", startNode.getLocation(), targetNode.getLocation());
                 break;
             }
         }
@@ -379,14 +378,14 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 if (targetNode.getLocation().equals(startLocation)) {
                     startEdge = entry.getValue();
                     edgeBackwards = true; // 反向边
-                    logger.debug("✓ 找到反向边: 从 {} 到 {}", endNode.getLocation(), targetNode.getLocation());
+                    SimpleLogger.debug("✓ 找到反向边: 从 {} 到 {}", endNode.getLocation(), targetNode.getLocation());
                     break;
                 }
             }
         }
 
         if (startEdge == null) {
-            logger.error("找不到连接节点{}和{}的边", startLocation, endLocation);
+            SimpleLogger.error("找不到连接节点{}和{}的边", startLocation, endLocation);
             return;
         }
 
@@ -395,11 +394,11 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         double edgeLength = startEdge.getLength();
         double boundaryPositionPercent = edgeLength > 0 ? (boundaryLocationOnEdge / edgeLength * 100.0) : 0.0;
 
-        logger.debug("边界在边上的位置: {}米 (占总长的{}%)",
+        SimpleLogger.debug("边界在边上的位置: {}米 (占总长的{}%)",
                 String.format("%.2f", boundaryLocationOnEdge), String.format("%.1f", boundaryPositionPercent));
-        logger.debug("边总长度: {}米, 边方向: {}",
+        SimpleLogger.debug("边总长度: {}米, 边方向: {}",
                 String.format("%.2f", edgeLength), edgeBackwards ? "反向 (从endNode到startNode)" : "正向 (从startNode到endNode)");
-        logger.debug("边界两侧信号组ID: 第一侧={}, 第二侧={}",
+        SimpleLogger.debug("边界两侧信号组ID: 第一侧={}, 第二侧={}",
                 currentBoundary.groups.getFirst(), currentBoundary.groups.getSecond());
 
         // 创建TravellingPoint，位置设置为0（在边界处）
@@ -408,13 +407,13 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         TrackNode actualEndNode = edgeBackwards ? startNode : endNode;
 
         // 轨道边信息（使用已获取的长度）
-        logger.debug("轨道边信息: 长度={}m, 节点={} -> {}",
+        SimpleLogger.debug("轨道边信息: 长度={}m, 节点={} -> {}",
                 String.format("%.2f", edgeLength), actualStartNode.getLocation(), actualEndNode.getLocation());
 
         // 检查节点连接情况
         int startConnections = graph.getConnectionsFrom(actualStartNode).size();
         int endConnections = graph.getConnectionsFrom(actualEndNode).size();
-        logger.debug("节点连接数: startNode有{}条边, endNode有{}条边",
+        SimpleLogger.debug("节点连接数: startNode有{}条边, endNode有{}条边",
                 startConnections, endConnections);
 
         // 计算TravellingPoint的精确起始位置（考虑边方向和边界位置）
@@ -422,17 +421,17 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         if (edgeBackwards) {
             // 反向边：从actualStartNode（原始node2）到边界的位置 = 边总长 - 边界位置
             startPosition = edgeLength - boundaryLocationOnEdge;
-            logger.debug("反向边调整: 边界位置={}m, 边总长={}m, 调整后起始位置={}m",
+            SimpleLogger.debug("反向边调整: 边界位置={}m, 边总长={}m, 调整后起始位置={}m",
                     String.format("%.2f", boundaryLocationOnEdge), String.format("%.2f", edgeLength), String.format("%.2f", startPosition));
         } else {
             // 正向边：从actualStartNode（原始node1）到边界的位置 = 边界位置
             startPosition = boundaryLocationOnEdge;
-            logger.debug("正向边: 边界位置={}m 即为起始位置", String.format("%.2f", boundaryLocationOnEdge));
+            SimpleLogger.debug("正向边: 边界位置={}m 即为起始位置", String.format("%.2f", boundaryLocationOnEdge));
         }
 
         // 验证起始位置在有效范围内
         if (startPosition < 0 || startPosition > edgeLength) {
-            logger.error("⚠️ 计算出的起始位置 {} 超出边范围 [0, {}]，强制调整为边界位置",
+            SimpleLogger.error("⚠️ 计算出的起始位置 {} 超出边范围 [0, {}]，强制调整为边界位置",
                     String.format("%.2f", startPosition), String.format("%.2f", edgeLength));
             startPosition = Math.max(0, Math.min(startPosition, edgeLength));
         }
@@ -448,14 +447,14 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
             offset = Math.min(offset, MAX_ABSOLUTE_OFFSET);
             offset = Math.min(offset, edgeLength * 0.5); // 不超过边长的一半
             startPosition = offset;
-            logger.debug("[{}]   起始位置为0，调整为 {}m (边长的{:.1f}%) 以避免移动问题",
+            SimpleLogger.debug("[{}]   起始位置为0，调整为 {}m (边长的{:.1f}%) 以避免移动问题",
                     worldPosition, String.format("%.6f", startPosition), (startPosition / edgeLength) * 100);
         } else if (startPosition == edgeLength) {
             double offset = Math.max(edgeLength * MIN_RELATIVE_OFFSET, MIN_ABSOLUTE_OFFSET);
             offset = Math.min(offset, MAX_ABSOLUTE_OFFSET);
             offset = Math.min(offset, edgeLength * 0.5); // 不超过边长的一半
             startPosition = edgeLength - offset;
-            logger.debug("[{}]   起始位置在边末端，调整为 {}m (边长的{:.1f}%) 以避免移动问题",
+            SimpleLogger.debug("[{}]   起始位置在边末端，调整为 {}m (边长的{:.1f}%) 以避免移动问题",
                     worldPosition, String.format("%.6f", startPosition), (offset / edgeLength) * 100);
         } else if (startPosition < 0.001 || startPosition > edgeLength - 0.001) {
             // 如果位置非常接近0或边长度，也进行调整
@@ -463,24 +462,24 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
             safeMargin = Math.min(safeMargin, 0.1);
             if (startPosition < safeMargin) {
                 startPosition = safeMargin;
-                logger.debug("[{}]   起始位置接近0 ({}m)，调整为 {}m",
+                SimpleLogger.debug("[{}]   起始位置接近0 ({}m)，调整为 {}m",
                         worldPosition, String.format("%.6f", startPosition - safeMargin), String.format("%.6f", startPosition));
             } else if (startPosition > edgeLength - safeMargin) {
                 startPosition = edgeLength - safeMargin;
-                logger.debug("[{}]   起始位置接近边末端 (距离末端{}m)，调整为 {}m",
+                SimpleLogger.debug("[{}]   起始位置接近边末端 (距离末端{}m)，调整为 {}m",
                         worldPosition, String.format("%.6f", edgeLength - startPosition), String.format("%.6f", startPosition));
             }
         }
 
-        logger.debug("[{}] 创建TravellingPoint详细参数:", worldPosition);
-        logger.debug("[{}]   startNode: {} (位置: {})",
+        SimpleLogger.debug("[{}] 创建TravellingPoint详细参数:", worldPosition);
+        SimpleLogger.debug("[{}]   startNode: {} (位置: {})",
                 worldPosition, actualStartNode.getLocation(), actualStartNode.getLocation().getLocation());
-        logger.debug("[{}]   endNode: {} (位置: {})",
+        SimpleLogger.debug("[{}]   endNode: {} (位置: {})",
                 worldPosition, actualEndNode.getLocation(), actualEndNode.getLocation().getLocation());
-        logger.debug("[{}]   edge: {} (长度: {}m)", worldPosition, startEdge, String.format("%.2f", edgeLength));
-        logger.debug("[{}]   position: {}m (在边上的位置)", worldPosition, String.format("%.2f", startPosition));
-        logger.debug("[{}]   edgeBackwards: {}", worldPosition, edgeBackwards);
-        logger.debug("[{}]   边界位置: {}m, 边方向: {}, 边界信号组: 第一侧={}, 第二侧={}",
+        SimpleLogger.debug("[{}]   edge: {} (长度: {}m)", worldPosition, startEdge, String.format("%.2f", edgeLength));
+        SimpleLogger.debug("[{}]   position: {}m (在边上的位置)", worldPosition, String.format("%.2f", startPosition));
+        SimpleLogger.debug("[{}]   edgeBackwards: {}", worldPosition, edgeBackwards);
+        SimpleLogger.debug("[{}]   边界位置: {}m, 边方向: {}, 边界信号组: 第一侧={}, 第二侧={}",
                 worldPosition, String.format("%.2f", boundaryLocationOnEdge), edgeBackwards ? "反向" : "正向",
                 currentBoundary.groups.getFirst(), currentBoundary.groups.getSecond());
 
@@ -502,7 +501,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         final int MAX_BOUNDARY_VISITS = 30; // 最多访问30个不同的边界（包括信号边界和其他边界）
         final double[] furthestDistance = new double[]{0.0}; // 记录最远距离
 
-        logger.debug("[{}] 循环检测设置: 最大移动距离={}米, 最大边界访问数={}",
+        SimpleLogger.debug("[{}] 循环检测设置: 最大移动距离={}米, 最大边界访问数={}",
                 worldPosition, MAX_TRAVEL_DISTANCE, MAX_BOUNDARY_VISITS);
 
         // 创建信号边界监听器
@@ -515,46 +514,46 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
             // 检查是否超过最大移动距离（防止无限循环）
             if (distance > MAX_TRAVEL_DISTANCE) {
-                logger.warn("[{}] ⚠️ 已达到最大移动距离限制 ({}米)，停止前进以防止无限循环", worldPosition, MAX_TRAVEL_DISTANCE);
+                SimpleLogger.warn("[{}] ⚠️ 已达到最大移动距离限制 ({}米)，停止前进以防止无限循环", worldPosition, MAX_TRAVEL_DISTANCE);
                 return true;
             }
 
             // 只处理信号边界
             if (!(edgePoint instanceof SignalBoundary boundary)) {
-                logger.debug("[{}] 监听器: 遇到非信号边界: {}", worldPosition, edgePoint.getClass().getSimpleName());
+                SimpleLogger.debug("[{}] 监听器: 遇到非信号边界: {}", worldPosition, edgePoint.getClass().getSimpleName());
                 return false;
             }
 
-            logger.debug("[{}] 监听器: 遇到信号边界 {} 在距离 {}m", worldPosition, boundary.id, String.format("%.2f", distance));
-            logger.debug("[{}]   边界连接的节点: {} -> {}", worldPosition, nodes.getFirst().getLocation(), nodes.getSecond().getLocation());
+            SimpleLogger.debug("[{}] 监听器: 遇到信号边界 {} 在距离 {}m", worldPosition, boundary.id, String.format("%.2f", distance));
+            SimpleLogger.debug("[{}]   边界连接的节点: {} -> {}", worldPosition, nodes.getFirst().getLocation(), nodes.getSecond().getLocation());
 
             // 调试：输出边界方向信息
             if (boundary.edgeLocation != null) {
-                logger.debug("[{}]    边界edgeLocation: {} -> {}", worldPosition,
+                SimpleLogger.debug("[{}]    边界edgeLocation: {} -> {}", worldPosition,
                         boundary.edgeLocation.getFirst(), boundary.edgeLocation.getSecond());
                 // 比较nodes和edgeLocation的顺序
                 boolean nodesMatchEdgeLocation = nodes.getFirst().getLocation().equals(boundary.edgeLocation.getFirst()) &&
                         nodes.getSecond().getLocation().equals(boundary.edgeLocation.getSecond());
                 boolean nodesReversed = nodes.getFirst().getLocation().equals(boundary.edgeLocation.getSecond()) &&
                         nodes.getSecond().getLocation().equals(boundary.edgeLocation.getFirst());
-                logger.debug("[{}]    节点顺序匹配: {}, 节点顺序反转: {}", worldPosition,
+                SimpleLogger.debug("[{}]    节点顺序匹配: {}, 节点顺序反转: {}", worldPosition,
                         nodesMatchEdgeLocation, nodesReversed);
                 if (!nodesMatchEdgeLocation && !nodesReversed) {
-                    logger.warn("[{}]    ⚠️ 节点顺序既不匹配也不反转！可能存在不一致", worldPosition);
-                    logger.warn("[{}]    nodes: {} -> {}", worldPosition,
+                    SimpleLogger.warn("[{}]    ⚠️ 节点顺序既不匹配也不反转！可能存在不一致", worldPosition);
+                    SimpleLogger.warn("[{}]    nodes: {} -> {}", worldPosition,
                             nodes.getFirst().getLocation(), nodes.getSecond().getLocation());
-                    logger.warn("[{}]    edgeLocation: {} -> {}", worldPosition,
+                    SimpleLogger.warn("[{}]    edgeLocation: {} -> {}", worldPosition,
                             boundary.edgeLocation.getFirst(), boundary.edgeLocation.getSecond());
                 }
             }
 
             // 调试：输出前进方向信息
-            logger.debug("[{}]   前进方向(actual): {} -> {}", worldPosition, actualStartNode.getLocation(), actualEndNode.getLocation());
-            logger.debug("[{}]   当前边方向(nodes): {} -> {}", worldPosition, nodes.getFirst().getLocation(), nodes.getSecond().getLocation());
+            SimpleLogger.debug("[{}]   前进方向(actual): {} -> {}", worldPosition, actualStartNode.getLocation(), actualEndNode.getLocation());
+            SimpleLogger.debug("[{}]   当前边方向(nodes): {} -> {}", worldPosition, nodes.getFirst().getLocation(), nodes.getSecond().getLocation());
 
             // 跳过当前边界
             if (boundary.id.equals(currentBoundary.id)) {
-                logger.debug("[{}]   跳过当前边界", worldPosition);
+                SimpleLogger.debug("[{}]   跳过当前边界", worldPosition);
                 return false;
             }
 
@@ -563,8 +562,8 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
             // 检查是否已访问过此边界（循环检测）
             if (visitedBoundaryIds.contains(boundary.id)) {
-                logger.warn("[{}] ⚠️ 检测到循环：边界 {} 已被访问过，停止前进", worldPosition, boundary.id);
-                logger.warn("[{}] ⚠️ 已访问边界数: {}, 最远移动距离: {}米",
+                SimpleLogger.warn("[{}] ⚠️ 检测到循环：边界 {} 已被访问过，停止前进", worldPosition, boundary.id);
+                SimpleLogger.warn("[{}] ⚠️ 已访问边界数: {}, 最远移动距离: {}米",
                         worldPosition, visitedBoundaryIds.size(), String.format("%.2f", furthestDistance[
                         0]));
                 return true;
@@ -572,11 +571,11 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
             // 记录此边界已访问
             visitedBoundaryIds.add(boundary.id);
-            logger.debug("[{}]   记录边界已访问，当前已访问边界数: {}", worldPosition, visitedBoundaryIds.size());
+            SimpleLogger.debug("[{}]   记录边界已访问，当前已访问边界数: {}", worldPosition, visitedBoundaryIds.size());
 
             // 检查是否超过最大边界访问数
             if (visitedBoundaryIds.size() > MAX_BOUNDARY_VISITS) {
-                logger.warn("[{}] ⚠️ 已达到最大边界访问数限制 ({}个)，停止前进", worldPosition, MAX_BOUNDARY_VISITS);
+                SimpleLogger.warn("[{}] ⚠️ 已达到最大边界访问数限制 ({}个)，停止前进", worldPosition, MAX_BOUNDARY_VISITS);
                 return true;
             }
             // ====== 循环检测结束 ======
@@ -585,7 +584,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
             // 记录边界两侧的信号组ID用于调试
             UUID firstSideGroupId = boundary.groups.getFirst();
             UUID secondSideGroupId = boundary.groups.getSecond();
-            logger.debug("[{}]   边界{}信号组ID: 第一侧={}, 第二侧={}",
+            SimpleLogger.debug("[{}]   边界{}信号组ID: 第一侧={}, 第二侧={}",
                     worldPosition, boundary.id, firstSideGroupId, secondSideGroupId);
 
             // 根据前进方向选择正确的信号组ID
@@ -597,20 +596,20 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 // 调试：比较actualStartNode与nodes的关系
                 boolean matchesFirst = actualStartNode.getLocation().equals(nodes.getFirst().getLocation());
                 boolean matchesSecond = actualStartNode.getLocation().equals(nodes.getSecond().getLocation());
-                logger.debug("[{}]   节点匹配: actualStartNode匹配nodes.first={}, nodes.second={}",
+                SimpleLogger.debug("[{}]   节点匹配: actualStartNode匹配nodes.first={}, nodes.second={}",
                         worldPosition, matchesFirst, matchesSecond);
 
                 // 关键修复：使用nodes.getFirst()作为参考节点，而不是actualStartNode
                 // 因为TravellingPoint在移动过程中，actualStartNode可能不是当前边的起点
                 // nodes.getFirst()是监听器收到的当前边的起点（经过forward ? nodes : nodes.swap()调整）
                 TrackNode referenceNode = nodes.getFirst();
-                logger.debug("[{}]   使用参考节点: {} (nodes.getFirst())", worldPosition, referenceNode.getLocation());
+                SimpleLogger.debug("[{}]   使用参考节点: {} (nodes.getFirst())", worldPosition, referenceNode.getLocation());
 
                 // 确定referenceNode是否是primary侧（edgeLocation.getSecond()）
                 boolean isPrimary = boundary.edgeLocation.getSecond().equals(referenceNode.getLocation());
                 groupId = isPrimary ? firstSideGroupId : secondSideGroupId;
                 sideChosen = isPrimary ? "第一" : "第二";
-                logger.debug("[{}]   方向判断: referenceNode={}, edgeLocation.second={}, isPrimary={}, 选择{}侧组ID",
+                SimpleLogger.debug("[{}]   方向判断: referenceNode={}, edgeLocation.second={}, isPrimary={}, 选择{}侧组ID",
                         worldPosition, referenceNode.getLocation(), boundary.edgeLocation.getSecond(),
                         isPrimary, sideChosen);
 
@@ -618,7 +617,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 if (groupId == null || collectedIds.contains(groupId)) {
                     UUID fallbackGroupId = isPrimary ? secondSideGroupId : firstSideGroupId;
                     String fallbackSide = isPrimary ? "第二" : "第一";
-                    logger.debug("[{}]    ⚠️ 原选择{}侧组ID无效(null={}, 已收集={})，尝试{}侧组ID: {}",
+                    SimpleLogger.debug("[{}]    ⚠️ 原选择{}侧组ID无效(null={}, 已收集={})，尝试{}侧组ID: {}",
                             worldPosition, sideChosen, groupId == null, groupId != null && collectedIds.contains(groupId),
                             fallbackSide, fallbackGroupId);
 
@@ -626,16 +625,16 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                         groupId = fallbackGroupId;
                         sideChosen = fallbackSide;
                         usedFallback = true;
-                        logger.debug("[{}]    ✅ 回退成功，使用{}侧组ID", worldPosition, sideChosen);
+                        SimpleLogger.debug("[{}]    ✅ 回退成功，使用{}侧组ID", worldPosition, sideChosen);
                     } else {
-                        logger.debug("[{}]    ⚠️ 回退组ID也无效，保持原选择", worldPosition);
+                        SimpleLogger.debug("[{}]    ⚠️ 回退组ID也无效，保持原选择", worldPosition);
                     }
                 }
             } else {
                 // 边界没有edgeLocation信息，使用第一侧作为默认
                 groupId = firstSideGroupId;
                 sideChosen = "第一";
-                logger.debug("[{}]   边界没有edgeLocation，使用第一侧组ID作为默认", worldPosition);
+                SimpleLogger.debug("[{}]   边界没有edgeLocation，使用第一侧组ID作为默认", worldPosition);
             }
 
             if (groupId != null && !collectedIds.contains(groupId)) {
@@ -646,18 +645,18 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 collectedIds.add(groupId);
                 collectedCountContainer[0]++;
 
-                logger.debug("[{}]   成功收集信号组ID: {} ({}侧{}) 存入槽位 {}",
+                SimpleLogger.debug("[{}]   成功收集信号组ID: {} ({}侧{}) 存入槽位 {}",
                         worldPosition, groupId, sideChosen, usedFallback ? "，回退" : "", slotIndex);
 
                 // 如果收集了3个信号组，返回true停止前进
                 if (collectedCountContainer[0] >= 3) {
-                    logger.debug("[{}]   已收集3个信号组，停止前进", worldPosition);
+                    SimpleLogger.debug("[{}]   已收集3个信号组，停止前进", worldPosition);
                     return true;
                 }
             } else if (groupId == null) {
-                logger.debug("[{}]   信号组ID为null，跳过", worldPosition);
+                SimpleLogger.debug("[{}]   信号组ID为null，跳过", worldPosition);
             } else if (collectedIds.contains(groupId)) {
-                logger.debug("[{}]   信号组ID已收集过，跳过 ({}侧)", worldPosition, sideChosen);
+                SimpleLogger.debug("[{}]   信号组ID已收集过，跳过 ({}侧)", worldPosition, sideChosen);
             }
 
             return false;
@@ -666,7 +665,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         // 使用TravellingPoint前进，直到收集3个信号组或到达轨道尽头
         // 使用Double.MAX_VALUE让TravellingPoint一直前进，直到监听器返回true或自然停止
         // 注意：TravellingPoint内部有visited集合避免重复访问同一条边，可以处理环形铁路
-        logger.debug("[{}] 轨道图信息: 节点数={}, 边数≈{}",
+        SimpleLogger.debug("[{}] 轨道图信息: 节点数={}, 边数≈{}",
                 worldPosition, graph.getNodes().size(), estimateEdgeCount(graph));
         // 创建自定义轨道选择器（根据进路编号选择转向规则）
         int route = getCurrentRoute();
@@ -744,24 +743,24 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
             routeSelector = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
         }
 
-        logger.debug("[{}] 开始TravellingPoint.travel()，最大距离: {}，使用进路选择器（进路{}）", worldPosition, Double.MAX_VALUE, route);
+        SimpleLogger.debug("[{}] 开始TravellingPoint.travel()，最大距离: {}，使用进路选择器（进路{}）", worldPosition, Double.MAX_VALUE, route);
         double actualDistance = travellingPoint.travel(graph, Double.MAX_VALUE, routeSelector, signalListener);
-        logger.debug("[{}] TravellingPoint.travel()完成，实际移动距离: {}m", worldPosition, String.format("%.2f", actualDistance));
-        logger.debug("[{}] 监听器收集统计: {}个信号组", worldPosition, collectedCountContainer[0]);
-        logger.debug("[{}] 循环检测结果: 最远移动距离={}米, 已访问边界数={}",
+        SimpleLogger.debug("[{}] TravellingPoint.travel()完成，实际移动距离: {}m", worldPosition, String.format("%.2f", actualDistance));
+        SimpleLogger.debug("[{}] 监听器收集统计: {}个信号组", worldPosition, collectedCountContainer[0]);
+        SimpleLogger.debug("[{}] 循环检测结果: 最远移动距离={}米, 已访问边界数={}",
                 worldPosition, String.format("%.2f", furthestDistance[
                 0]), visitedBoundaryIds.size() - 1); // 减去当前边界
 
  /*       // 检查移动距离是否为0，如果是，给出明确的轨道结构诊断
         if (actualDistance == 0.0) {
-            logger.warn("[{}] ⚠️ TravellingPoint移动距离为0！这意味着轨道结构有限。", worldPosition);
-            logger.warn("[{}] ⚠️ 当前轨道: {} -> {} (长度: {}m)",
+            SimpleLogger.warn("[{}] ⚠️ TravellingPoint移动距离为0！这意味着轨道结构有限。", worldPosition);
+            SimpleLogger.warn("[{}] ⚠️ 当前轨道: {} -> {} (长度: {}m)",
                     worldPosition, actualStartNode.getLocation(), actualEndNode.getLocation(), String.format("%.2f", edgeLength));
-            logger.warn("[{}] ⚠️ 节点连接数: startNode有{}条边, endNode有{}条边",
+            SimpleLogger.warn("[{}] ⚠️ 节点连接数: startNode有{}条边, endNode有{}条边",
                     worldPosition, startConnections, endConnections);
-            logger.warn("[{}] ⚠️ 轨道图规模: 节点数={}, 边数≈{}",
+            SimpleLogger.warn("[{}] ⚠️ 轨道图规模: 节点数={}, 边数≈{}",
                     worldPosition, graph.getNodes().size(), estimateEdgeCount(graph));
-            logger.warn("[{}] ⚠️ 解决方案: 在现有轨道前方至少延伸3段轨道，每段放置一个信号机", worldPosition);
+            SimpleLogger.warn("[{}] ⚠️ 解决方案: 在现有轨道前方至少延伸3段轨道，每段放置一个信号机", worldPosition);
         }
 */
         // 更新移动统计
@@ -770,13 +769,13 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         totalTravelDistance += actualDistance;
 
         // 输出调试日志
-        // logger.debug(String.format(
+        // SimpleLogger.debug(String.format(
         // "[%s] TravellingPoint移动统计 - 调用次数: %d, 本次移动: %.2f米, 累计移动: %.2f米, 收集到信号组: %d个",
         // worldPosition.toString(), travelCallCount, lastTravelDistance, totalTravelDistance,
         // collectedCountContainer[0]
         // ));
 
-        logger.debug("[{}] === findForwardSignalGroups 结束 ===", worldPosition);
+        SimpleLogger.debug("[{}] === findForwardSignalGroups 结束 ===", worldPosition);
     }
 
     // 查找包含指定节点位置的轨道图
@@ -796,8 +795,8 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
     private void updateOccupancyStates() {
         for (int i = 0; i < 4; i++) {
             if (signalGroupIds[i] == null) {
-                // 无信号组ID，视为占用
-                occupancyStates[i] = true;
+                // 无信号组ID，视为空闲
+                occupancyStates[i] = false;
                 continue;
             }
 
@@ -1002,7 +1001,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         // }
         // } catch (Exception e) {
         // // 无效的UUID格式，跳过
-        // logger.debug("无效的SelectedSignalGroupId格式，跳过迁移");
+        // SimpleLogger.debug("无效的SelectedSignalGroupId格式，跳过迁移");
         // }
         // }
 
