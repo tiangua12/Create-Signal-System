@@ -30,3 +30,5 @@ createsources/
 backup_java_src/
 back/
 *.sh
+
+.claude/
