@@ -23,6 +23,7 @@ public class ModCreativeModeTabs {
                     .displayItems((parameters, output) -> {
                         // 添加所有mod物品到这里
                         output.accept(ModBlocks.SIGNAL_STATE_DISPLAY.get());
+                  //      output.accept(ModBlocks.DISTANT_SIGNAL.get());
                     })
                     .build());
 

@@ -28,6 +28,14 @@ public class ClientModEvents {
                 SignalRenderer::new
         );
 
+        // 注册预告信号方块实体的渲染器
+        // TODO: 创建自定义渲染器
+        // BlockEntityRenderers.register(
+        //         ModBlockEntities.DISTANT_SIGNAL.get(),
+        //         SignalRenderer::new
+        // );
+
     //    CreateSignalSystemMod.LOGGER.info("注册信号状态显示器渲染器成功");
     }
+
 }

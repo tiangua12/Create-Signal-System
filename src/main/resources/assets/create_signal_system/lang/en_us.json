@@ -2,10 +2,13 @@
   "itemGroup.create_signal_system": "Create: Signal System",
 
   "block.create_signal_system.signal_state_display": "Signal State Display",
+  "block.create_signal_system.distant_signal": "Distant Signal",
 
   "item.create_signal_system.signal_state_display": "Signal State Display",
+  "item.create_signal_system.distant_signal": "Distant Signal",
 
   "tooltip.create_signal_system.signal_state_display": "Displays the state of railway signal groups",
+  "tooltip.create_signal_system.distant_signal": "Displays the state of forward signal groups",
 
   "message.create_signal_system.signal_state.invalid": "Invalid",
   "message.create_signal_system.signal_state.red": "Red",

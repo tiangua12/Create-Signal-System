@@ -1,6 +1,7 @@
 package com.easttown.createsignalsystem.init;
 
 import com.easttown.createsignalsystem.CreateSignalSystemMod;
+import com.easttown.createsignalsystem.init.ModEdgePointTypes;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.track.TrackTargetingBlockItem;
 import net.minecraft.world.item.BlockItem;
@@ -27,9 +28,15 @@ public class ModItems {
      * 注册方块物品（供ModBlocks调用）
      */
     public static <T extends Block> RegistryObject<Item> registerBlockItem(String name, RegistryObject<T> block) {
+        EdgePointType<?> edgePointType;
+        if ("distant_signal".equals(name)) {
+            edgePointType = ModEdgePointTypes.DISTANT_SIGNAL;
+        } else {
+            edgePointType = EdgePointType.SIGNAL;
+        }
         return ITEMS.register(name, () -> new TrackTargetingBlockItem(block.get(),
             new Item.Properties(),
-            EdgePointType.SIGNAL));
+            edgePointType));
     }
 
     public static void register(IEventBus eventBus) {

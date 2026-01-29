@@ -3,6 +3,8 @@ package com.easttown.createsignalsystem.block.entity;
 import com.easttown.createsignalsystem.init.ModBlockEntities;
 import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.util.SimpleLogger;
+import com.easttown.createsignalsystem.config.RouteConfiguration;
+import com.easttown.createsignalsystem.config.TurnAction;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import javax.annotation.Nullable;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
@@ -13,7 +15,6 @@ import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
 import com.simibubi.create.Create;
 import com.simibubi.create.foundation.blockEntity.SmartBlockEntity;
 import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
-import com.simibubi.create.content.equipment.goggles.IHaveGoggleInformation;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -32,8 +33,7 @@ import com.simibubi.create.foundation.utility.Couple;
 import com.simibubi.create.foundation.utility.Pair;
 import net.minecraft.world.phys.Vec3;
 
-public class SignalStateDisplayBlockEntity extends SignalBlockEntity
-        implements IHaveGoggleInformation {
+public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
 
     // 四显示信号状态枚举
     public enum FourAspectSignalState {
@@ -66,8 +66,8 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
     // 红石控制
     private int lastRedstoneSignal = 0;
-    private int currentRoute = 1; // 当前进路 (1-6)
-    private boolean forceRed = false; // 强制红灯标志 (红石信号7-15)
+    private int currentRoute = 1; // 当前进路 (1-7，0表示强制红灯但通常不存储为currentRoute值)
+    private boolean forceRed = false; // 强制红灯标志 (红石信号8-15)
     private boolean localLastReportedPower = false; // 本地红石输出状态跟踪
 
     // 边界ID用于显示 (可选)
@@ -87,12 +87,19 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
     private final int[] occupancyDebounceCounters = new int[4]; // 每个信号组的去抖动计数器
     private static final int DEBOUNCE_THRESHOLD = 4; // 需要连续4个tick（0.2秒）的相同状态才认为有效
 
+    // 进路配置系统（新增）
+    private final Map<Integer, RouteConfiguration> routeConfigs = new HashMap<>(); // 进路1-7的配置
+    private final Map<
+            Integer, Integer> signalMappings = new HashMap<>(); // 红石信号强度(1-15)到进路槽位(1-7)的映射
+
     // 构造函数
     public SignalStateDisplayBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
         // 父类已初始化state为INVALID，lastReportedPower为false
         // 初始化数组
         Arrays.fill(boundaryIds, "");
+        // 初始化默认配置
+        initializeDefaultConfigs();
     }
 
     public SignalStateDisplayBlockEntity(BlockPos pos, BlockState state) {
@@ -185,17 +192,25 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         int redstoneSignal = level.getBestNeighborSignal(worldPosition);
         if (redstoneSignal != lastRedstoneSignal) {
             lastRedstoneSignal = redstoneSignal;
-            // 红石信号1-6：选择进路
-            if (redstoneSignal >= 1 && redstoneSignal <= 6) {
-                currentRoute = redstoneSignal;
-                forceRed = false;
-            } else if (redstoneSignal == 0) {
+
+            // 使用信号映射获取目标进路槽位
+            int targetSlot = getMappedRoute(redstoneSignal);
+
+            if (redstoneSignal == 0) {
                 // 无信号时保持当前进路，清除强制红灯
                 forceRed = false;
-            } else {
-                // 信号强度7-15：强制红灯
+            } else if (targetSlot == 0) {
+                // 映射到0：强制红灯（红石信号8-15）
                 forceRed = true;
-                // 进路保持原值，不改变
+                // 保持当前进路不变
+            } else if (targetSlot >= 1 && targetSlot <= 7) {
+                // 映射到1-7：选择进路（红石信号1-7）
+                currentRoute = targetSlot;
+                forceRed = false;
+            } else {
+                // 其他情况：保持当前状态
+                SimpleLogger.debug("[{}] 无效的信号映射结果: 红石信号={} -> 目标槽位={}",
+                        worldPosition, redstoneSignal, targetSlot);
             }
             setChanged();
         }
@@ -203,15 +218,13 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
     @Override
     public boolean getReportedPower() {
-        // 红石信号强度7-15：强制红灯
+        // 强制红灯标志（红石信号映射到槽位0时设置）
         if (forceRed) {
             return true;
         }
-        // 红石信号强度1-6：不强制红灯（仅用于进路选择）
-        if (lastRedstoneSignal >= 1 && lastRedstoneSignal <= 6) {
-            return false;
-        }
-        // 其他情况：使用父类逻辑（红石信号强度0或>15的情况）
+        // 红石信号映射到进路1-7：不强制红灯（仅用于进路选择）
+        // 注意：lastRedstoneSignal可能为0（无信号）或其他值，但forceRed为false时不强制红灯
+        // 使用父类逻辑（红石信号强度0或>15的情况）
         return super.getReportedPower();
     }
 
@@ -671,78 +684,9 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         int route = getCurrentRoute();
         TravellingPoint.ITrackSelector routeSelector;
 
-        if (route == 1) {
-            // 进路1：不做任何岔道转换，一直直行（使用SteerDirection.NONE寻找直行方向）
-            routeSelector = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
-        } else if (route == 2) {
-            // 进路2：第一个岔道左转，之后直行
-            TravellingPoint.ITrackSelector leftSteer = travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0));
-            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
-            boolean[] hasTurned = new boolean[]{false};
-            routeSelector = (g, pair) -> {
-                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-                if (validTargets.isEmpty()) return null;
-                if (validTargets.size() > 1 && !hasTurned[0]) {
-                    // 第一个岔道，左转
-                    hasTurned[0] = true;
-                    return leftSteer.apply(g, pair);
-                }
-                // 其他情况直行
-                return straightSteer.apply(g, pair);
-            };
-        } else if (route == 3) {
-            // 进路3：两个岔道都左转，之后直行
-            TravellingPoint.ITrackSelector leftSteer = travellingPoint.steer(SteerDirection.LEFT, new Vec3(0, 1, 0));
-            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
-            int[] turnCount = new int[]{0};
-            routeSelector = (g, pair) -> {
-                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-                if (validTargets.isEmpty()) return null;
-                if (validTargets.size() > 1 && turnCount[0] < 2) {
-                    // 前两个岔道左转
-                    turnCount[0]++;
-                    return leftSteer.apply(g, pair);
-                }
-                // 两个岔道转完后，直行
-                return straightSteer.apply(g, pair);
-            };
-        } else if (route == 4) {
-            // 进路4：第一个岔道右转，之后直行
-            TravellingPoint.ITrackSelector rightSteer = travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0));
-            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
-            boolean[] hasTurned = new boolean[]{false};
-            routeSelector = (g, pair) -> {
-                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-                if (validTargets.isEmpty()) return null;
-                if (validTargets.size() > 1 && !hasTurned[0]) {
-                    // 第一个岔道，右转
-                    hasTurned[0] = true;
-                    return rightSteer.apply(g, pair);
-                }
-                // 其他情况直行
-                return straightSteer.apply(g, pair);
-            };
-        } else if (route == 5) {
-            // 进路5：两个岔道都右转，之后直行
-            TravellingPoint.ITrackSelector rightSteer = travellingPoint.steer(SteerDirection.RIGHT, new Vec3(0, 1, 0));
-            TravellingPoint.ITrackSelector straightSteer = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
-            int[] turnCount = new int[]{0};
-            routeSelector = (g, pair) -> {
-                List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
-                if (validTargets.isEmpty()) return null;
-                if (validTargets.size() > 1 && turnCount[0] < 2) {
-                    // 前两个岔道右转
-                    turnCount[0]++;
-                    return rightSteer.apply(g, pair);
-                }
-                // 两个岔道转完后，直行
-                return straightSteer.apply(g, pair);
-            };
-        } else {
-            // 进路6或其他：默认直行
-            routeSelector = travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
-        }
-
+        // 使用新的配置系统创建进路选择器
+        routeSelector = createRouteSelector(route, travellingPoint);
+        CreateSignalSystemMod.LOGGER.info("开始TravellingPoint");
         SimpleLogger.debug("[{}] 开始TravellingPoint.travel()，最大距离: {}，使用进路选择器（进路{}）", worldPosition, Double.MAX_VALUE, route);
         double actualDistance = travellingPoint.travel(graph, Double.MAX_VALUE, routeSelector, signalListener);
         SimpleLogger.debug("[{}] TravellingPoint.travel()完成，实际移动距离: {}m", worldPosition, String.format("%.2f", actualDistance));
@@ -751,18 +695,18 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
                 worldPosition, String.format("%.2f", furthestDistance[
                 0]), visitedBoundaryIds.size() - 1); // 减去当前边界
 
- /*       // 检查移动距离是否为0，如果是，给出明确的轨道结构诊断
-        if (actualDistance == 0.0) {
-            SimpleLogger.warn("[{}] ⚠️ TravellingPoint移动距离为0！这意味着轨道结构有限。", worldPosition);
-            SimpleLogger.warn("[{}] ⚠️ 当前轨道: {} -> {} (长度: {}m)",
-                    worldPosition, actualStartNode.getLocation(), actualEndNode.getLocation(), String.format("%.2f", edgeLength));
-            SimpleLogger.warn("[{}] ⚠️ 节点连接数: startNode有{}条边, endNode有{}条边",
-                    worldPosition, startConnections, endConnections);
-            SimpleLogger.warn("[{}] ⚠️ 轨道图规模: 节点数={}, 边数≈{}",
-                    worldPosition, graph.getNodes().size(), estimateEdgeCount(graph));
-            SimpleLogger.warn("[{}] ⚠️ 解决方案: 在现有轨道前方至少延伸3段轨道，每段放置一个信号机", worldPosition);
-        }
-*/
+        /*       // 检查移动距离是否为0，如果是，给出明确的轨道结构诊断
+                if (actualDistance == 0.0) {
+                    SimpleLogger.warn("[{}] ⚠️ TravellingPoint移动距离为0！这意味着轨道结构有限。", worldPosition);
+                    SimpleLogger.warn("[{}] ⚠️ 当前轨道: {} -> {} (长度: {}m)",
+                            worldPosition, actualStartNode.getLocation(), actualEndNode.getLocation(), String.format("%.2f", edgeLength));
+                    SimpleLogger.warn("[{}] ⚠️ 节点连接数: startNode有{}条边, endNode有{}条边",
+                            worldPosition, startConnections, endConnections);
+                    SimpleLogger.warn("[{}] ⚠️ 轨道图规模: 节点数={}, 边数≈{}",
+                            worldPosition, graph.getNodes().size(), estimateEdgeCount(graph));
+                    SimpleLogger.warn("[{}] ⚠️ 解决方案: 在现有轨道前方至少延伸3段轨道，每段放置一个信号机", worldPosition);
+                }
+        */
         // 更新移动统计
         travelCallCount++;
         lastTravelDistance = actualDistance;
@@ -848,7 +792,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
 
     // 计算四显示信号状态
     private FourAspectSignalState calculateFourAspectSignal() {
-        // 强制红灯优先级最高（红石信号7-15）
+        // 强制红灯优先级最高（红石信号8-15）
         if (forceRed) {
             return FourAspectSignalState.RED;
         }
@@ -890,7 +834,7 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
     }
 
     // 更新红石信号输出（红灯时输出信号）
-    private void updateRedstoneOutput() {
+    public void updateRedstoneOutput() {
         boolean powered = getState() == SignalBlockEntity.SignalState.RED;
         if (powered != localLastReportedPower) {
             localLastReportedPower = powered;
@@ -931,6 +875,13 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         tag.putInt("TravelCallCount", travelCallCount);
         tag.putDouble("TotalTravelDistance", totalTravelDistance);
         tag.putDouble("LastTravelDistance", lastTravelDistance);
+
+        // 存储进路配置系统数据
+        CompoundTag routeConfigsTag = new CompoundTag();
+        for (Map.Entry<Integer, RouteConfiguration> entry : routeConfigs.entrySet()) {
+            routeConfigsTag.put("Route_" + entry.getKey(), entry.getValue().serialize());
+        }
+        tag.put("RouteConfigs", routeConfigsTag);
     }
 
     @Override
@@ -1014,6 +965,24 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         }
         if (tag.contains("LastTravelDistance")) {
             lastTravelDistance = tag.getDouble("LastTravelDistance");
+        }
+
+        // 读取进路配置系统数据
+        if (tag.contains("RouteConfigs")) {
+            CompoundTag routeConfigsTag = tag.getCompound("RouteConfigs");
+            routeConfigs.clear();
+            for (String key : routeConfigsTag.getAllKeys()) {
+                if (key.startsWith("Route_")) {
+                    try {
+                        int routeId = Integer.parseInt(key.substring(6));
+                        CompoundTag routeTag = routeConfigsTag.getCompound(key);
+                        RouteConfiguration config = RouteConfiguration.deserialize(routeTag);
+                        routeConfigs.put(routeId, config);
+                    } catch (NumberFormatException e) {
+                        SimpleLogger.debug("无效的进路配置键: " + key);
+                    }
+                }
+            }
         }
     }
 
@@ -1161,6 +1130,127 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         return lastTravelDistance;
     }
 
+    // ==================== 进路配置系统方法 ====================
+
+    /** 初始化默认配置 */
+    private void initializeDefaultConfigs() {
+        // 初始化进路1-7的默认配置
+        for (int routeId = 1; routeId <= 7; routeId++) {
+            routeConfigs.put(routeId, RouteConfiguration.createDefaultRoute(routeId));
+        }
+
+        // 初始化默认红石信号映射：信号强度1-7对应进路1-7，信号强度8-15对应强制红灯（进路0）
+        for (int signal = 1; signal <= 15; signal++) {
+            if (signal <= 7) {
+                signalMappings.put(signal, signal); // 信号1-7映射到进路1-7
+            } else {
+                signalMappings.put(signal, 0); // 信号8-15映射到进路0（强制红灯）
+            }
+        }
+    }
+
+    /** 获取进路配置 */
+    public RouteConfiguration getRouteConfig(int routeId) {
+        return routeConfigs.get(routeId);
+    }
+
+    /** 设置进路配置 */
+    public void setRouteConfig(int routeId, RouteConfiguration config) {
+        routeConfigs.put(routeId, config);
+        setChanged(); // 标记需要保存
+        // 强制下次tick重新寻路
+        lastCheckedBoundary = null;
+    }
+
+    /** 获取红石信号映射 */
+    public int getMappedRoute(int redstoneSignal) {
+        return signalMappings.getOrDefault(redstoneSignal, 0);
+    }
+
+    /** 设置红石信号映射 */
+    public void setSignalMapping(int redstoneSignal, int targetRoute) {
+        signalMappings.put(redstoneSignal, targetRoute);
+        setChanged(); // 标记需要保存
+        // 强制下次tick重新寻路
+        lastCheckedBoundary = null;
+    }
+
+    /** 获取所有进路配置 */
+    public Map<Integer, RouteConfiguration> getAllRouteConfigs() {
+        return new HashMap<>(routeConfigs);
+    }
+
+    /** 获取所有信号映射 */
+    public Map<Integer, Integer> getAllSignalMappings() {
+        return new HashMap<>(signalMappings);
+    }
+
+    /** 基于配置创建进路选择器 */
+    public TravellingPoint.ITrackSelector createRouteSelector(int routeId, TravellingPoint travellingPoint) {
+        RouteConfiguration config = routeConfigs.getOrDefault(routeId, RouteConfiguration.createDefaultRoute(routeId));
+
+        CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector检查: config={}, isDefaultStraight={}", worldPosition, config != null ? "存在" : "null", config != null ? config.isDefaultStraight() : "null");
+        if (config == null || config.isDefaultStraight()) {
+            // 默认直行
+            return travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
+        }
+
+        TurnAction[] turnActions = config.getTurnActions();
+        if (turnActions == null || turnActions.length == 0) {
+            return travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0));
+        }
+
+        // 创建岔道映射：岔道编号 -> 转向动作
+        Map<Integer, SteerDirection> junctionMap = new HashMap<>();
+        for (TurnAction action : turnActions) {
+            if (action != null && action.getDirection() != SteerDirection.NONE) {
+                junctionMap.put(action.getJunctionIndex(), action.getDirection());
+            }
+        }
+
+        // 岔道计数器：记录遇到的第几个岔道
+        int[] junctionCounter = new int[]{0};
+
+        return (graph, pair) -> {
+            List<Map.Entry<TrackNode, TrackEdge>> validTargets = pair.getSecond();
+            if (validTargets.isEmpty()) {
+                CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 无有效目标", worldPosition);
+                return null;
+            }
+
+            boolean isJunction = validTargets.size() > 1;
+            CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 岔道检测: {} ({}个目标), 当前计数器: {}",
+                    worldPosition, isJunction ? "是" : "否", validTargets.size(), junctionCounter[0]);
+
+            // 检查是否是岔道（多个有效目标）
+            if (isJunction) {
+                // 遇到岔道，递增计数器
+                junctionCounter[0]++;
+                CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 遇到第{}个岔道", worldPosition, junctionCounter[
+                0]);
+
+                // 检查是否有这个岔道的转向配置
+                SteerDirection direction = junctionMap.get(junctionCounter[0]);
+                CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 岔道{}的转向配置: {}",
+                        worldPosition, junctionCounter[
+                        0], direction != null ? direction : "无(默认直行)");
+
+                if (direction != null) {
+                    // 应用配置的转向
+                    CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 应用转向: {}", worldPosition, direction);
+                    return travellingPoint.steer(direction, new Vec3(0, 1, 0)).apply(graph, pair);
+                }
+                // 没有配置，默认直行
+                CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 无转向配置，默认直行", worldPosition);
+            } else {
+                CreateSignalSystemMod.LOGGER.info("[{}] createRouteSelector: 不是岔道，直行", worldPosition);
+            }
+
+            // 不是岔道，或者没有转向配置，直行
+            return travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0)).apply(graph, pair);
+        };
+    }
+
     /** 估算轨道图的边数 */
     private int estimateEdgeCount(TrackGraph graph) {
         if (graph == null) return 0;
@@ -1183,111 +1273,4 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity
         return Math.max(estimatedEdges, 0);
     }
 
-    // IHaveGoggleInformation接口实现
-    @Override
-    public boolean addToGoggleTooltip(List<Component> tooltip, boolean isPlayerSneaking) {
-        // 添加四显示信号状态信息
-        FourAspectSignalState fourAspectState = getFourAspectState();
-        String stateName = getFourAspectStateDisplayName(fourAspectState);
-        ChatFormatting stateColor = getFourAspectStateColor(fourAspectState);
-
-        Component signalLine = Component.literal("    四显示信号: ")
-                .append(Component.literal(stateName).withStyle(stateColor));
-        tooltip.add(signalLine);
-
-        // 添加基础信号状态
-        SignalBlockEntity.SignalState baseState = getState();
-        ChatFormatting baseColor = getBaseStateColor(baseState);
-        Component baseLine = Component.literal("    基础信号: ")
-                .append(Component.literal(getBaseStateDisplayName(baseState)).withStyle(baseColor));
-        tooltip.add(baseLine);
-
-        // 添加进路信息
-        int currentRoute = getCurrentRoute();
-        tooltip.add(Component.literal("    当前进路: " + currentRoute).withStyle(ChatFormatting.YELLOW));
-
-        // 添加强制红灯状态
-        if (isForceRed()) {
-            tooltip.add(Component.literal("    强制红灯: 激活").withStyle(ChatFormatting.RED));
-        }
-
-        // 添加信号组占用状态（简要信息）
-        boolean[] occupancyStates = getOccupancyStates();
-        String[] intervalNames = {"    当前", "    前方1", "    前方2", "    前方3"};
-
-        for (int i = 0; i < 4; i++) {
-            ChatFormatting statusColor = occupancyStates[
-                    i] ? ChatFormatting.RED : ChatFormatting.GREEN;
-            String statusText = occupancyStates[i] ? "占用" : "空闲";
-            Component line = Component.literal(intervalNames[i] + ": ")
-                    .append(Component.literal(statusText).withStyle(statusColor));
-            tooltip.add(line);
-        }
-
-        return true;
-    }
-
-    private String getFourAspectStateDisplayName(FourAspectSignalState state) {
-        switch (state) {
-            case RED:
-                return "红灯";
-            case YELLOW:
-                return "黄灯";
-            case GREEN_YELLOW:
-                return "绿黄灯";
-            case GREEN:
-                return "绿灯";
-            case INVALID:
-                return "无效";
-            default:
-                return "未知";
-        }
-    }
-
-    private ChatFormatting getFourAspectStateColor(FourAspectSignalState state) {
-        switch (state) {
-            case RED:
-                return ChatFormatting.RED;
-            case YELLOW:
-                return ChatFormatting.YELLOW;
-            case GREEN_YELLOW:
-                return ChatFormatting.GREEN;
-            case GREEN:
-                return ChatFormatting.GREEN;
-            case INVALID:
-                return ChatFormatting.GRAY;
-            default:
-                return ChatFormatting.WHITE;
-        }
-    }
-
-    private String getBaseStateDisplayName(SignalBlockEntity.SignalState state) {
-        switch (state) {
-            case RED:
-                return "红灯";
-            case YELLOW:
-                return "黄灯";
-            case GREEN:
-                return "绿灯";
-            case INVALID:
-                return "无效";
-            default:
-                return "未知";
-        }
-    }
-
-    private ChatFormatting getBaseStateColor(SignalBlockEntity.SignalState state) {
-        switch (state) {
-            case RED:
-                return ChatFormatting.RED;
-            case YELLOW:
-                return ChatFormatting.YELLOW;
-            case GREEN:
-                return ChatFormatting.GREEN;
-            case INVALID:
-                return ChatFormatting.GRAY;
-            default:
-                return ChatFormatting.WHITE;
-        }
-    }
 }

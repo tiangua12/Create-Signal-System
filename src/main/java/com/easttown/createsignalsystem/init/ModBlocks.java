@@ -2,6 +2,7 @@ package com.easttown.createsignalsystem.init;
 
 import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.block.SignalStateDisplayBlock;
+import com.easttown.createsignalsystem.block.DistantSignalBlock;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import com.simibubi.create.content.trains.track.TrackTargetingBlockItem;
 import net.minecraft.world.item.BlockItem;
@@ -25,6 +26,15 @@ public class ModBlocks {
     // 信号状态显示器方块
     public static final RegistryObject<Block> SIGNAL_STATE_DISPLAY = registerBlock("signal_state_display",
             () -> new SignalStateDisplayBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0f, 6.0f)
+                    .requiresCorrectToolForDrops()
+                    .noOcclusion() // 允许光线透过
+            ));
+
+    // 预告信号方块
+    public static final RegistryObject<Block> DISTANT_SIGNAL = registerBlock("distant_signal",
+            () -> new DistantSignalBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(2.0f, 6.0f)
                     .requiresCorrectToolForDrops()

@@ -2,8 +2,13 @@ package com.easttown.createsignalsystem.block;
 
 import com.easttown.createsignalsystem.init.ModBlockEntities;
 import com.easttown.createsignalsystem.block.entity.SignalStateDisplayBlockEntity;
+import com.easttown.createsignalsystem.client.gui.screen.RouteConfigScreen;
 import com.easttown.createsignalsystem.init.ModItems;
 import com.simibubi.create.content.trains.signal.SignalBlock;
+import com.simibubi.create.AllItems;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.api.distmarker.OnlyIn;
+import net.minecraft.client.Minecraft;
 import com.simibubi.create.content.trains.signal.SignalBlockEntity;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
 import java.util.UUID;
@@ -63,6 +68,12 @@ public class SignalStateDisplayBlock extends SignalBlock {
             return InteractionResult.PASS;
         }
 */
+        // 检查是否拿着扳手，如果是则让onWrenched处理
+        boolean isWrench = player.getItemInHand(hand).is(AllItems.WRENCH.get());
+        if (isWrench) {
+            return InteractionResult.PASS;
+        }
+
         if (level.isClientSide) {
             return InteractionResult.SUCCESS;
         }
@@ -178,8 +189,60 @@ public class SignalStateDisplayBlock extends SignalBlock {
 
     @Override
     public InteractionResult onWrenched(BlockState state, UseOnContext context) {
-        // 禁用扳手切换信号类型的功能，保持为普通模式
-        // 不执行任何操作，直接返回SUCCESS
+        Level level = context.getLevel();
+        Player player = context.getPlayer();
+
+        if (player == null) {
+            return InteractionResult.PASS;
+        }
+
+        // 检查是否按住Shift（Shift+扳手快速拆除由onSneakWrenched处理）
+        if (player.isShiftKeyDown()) {
+            return InteractionResult.PASS;
+        }
+
+        // 检查玩家手中的物品是否是扳手
+        ItemStack heldItem = player.getItemInHand(context.getHand());
+        boolean isWrench = heldItem.is(AllItems.WRENCH.get());
+
+        if (!isWrench) {
+            return InteractionResult.PASS;
+        }
+
+        // 客户端：打开GUI
+        if (level.isClientSide) {
+            // 打开进路配置GUI
+            openRouteConfigScreen(context.getClickedPos());
+            return InteractionResult.SUCCESS;
+        }
+
+        return InteractionResult.SUCCESS;
+    }
+
+    // 客户端方法：打开进路配置屏幕
+    @OnlyIn(Dist.CLIENT)
+    private void openRouteConfigScreen(BlockPos pos) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || minecraft.player == null) {
+            return;
+        }
+
+        // 获取方块实体
+        if (minecraft.level.getBlockEntity(pos) instanceof SignalStateDisplayBlockEntity blockEntity) {
+            // 打开配置屏幕
+            minecraft.setScreen(new RouteConfigScreen(blockEntity));
+        } else {
+            // 如果无法获取方块实体，显示错误信息
+            minecraft.player.displayClientMessage(
+                net.minecraft.network.chat.Component.literal("§c无法打开配置界面：信号机方块实体不存在"),
+                false
+            );
+        }
+    }
+
+    @Override
+    public InteractionResult onSneakWrenched(BlockState state, UseOnContext context) {
+        // Shift+右键使用扳手快速拆除
         return InteractionResult.SUCCESS;
     }
 

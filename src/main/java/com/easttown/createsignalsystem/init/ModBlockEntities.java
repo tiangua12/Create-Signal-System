@@ -2,6 +2,7 @@ package com.easttown.createsignalsystem.init;
 
 import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.block.entity.SignalStateDisplayBlockEntity;
+import com.easttown.createsignalsystem.block.entity.DistantSignalBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -15,6 +16,12 @@ public class ModBlockEntities {
             BLOCK_ENTITIES.register("signal_state_display",
                     () -> BlockEntityType.Builder.of(SignalStateDisplayBlockEntity::new,
                             ModBlocks.SIGNAL_STATE_DISPLAY.get()).build(null));
+
+    // 预告信号方块实体
+    public static final RegistryObject<BlockEntityType<DistantSignalBlockEntity>> DISTANT_SIGNAL =
+            BLOCK_ENTITIES.register("distant_signal",
+                    () -> BlockEntityType.Builder.of(DistantSignalBlockEntity::new,
+                            ModBlocks.DISTANT_SIGNAL.get()).build(null));
 
     public static void register(com.easttown.createsignalsystem.CreateSignalSystemMod mod) {
         // 注册在Mod主类中完成
