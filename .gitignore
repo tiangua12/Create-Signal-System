@@ -25,7 +25,7 @@ run
 forge*changelog.txt
 
 backup/
-create-1.20.1-0.5.1.j-55-sources/
+createsources/
 *.txt
 backup_java_src/
 back/
