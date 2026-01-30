@@ -30,5 +30,5 @@ createsources/
 backup_java_src/
 back/
 *.sh
-
+*.md
 .claude/
