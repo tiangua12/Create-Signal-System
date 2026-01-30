@@ -3,17 +3,24 @@ package com.easttown.createsignalsystem.system;
 import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.block.entity.SignalStateDisplayBlockEntity;
 import com.easttown.createsignalsystem.init.ModBlocks;
+import com.easttown.createsignalsystem.util.SimpleLogger;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.signal.SignalEdgeGroup;
+import com.simibubi.create.content.trains.entity.Carriage;
 import com.simibubi.create.content.trains.entity.Train;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -89,7 +96,21 @@ public class SignalSystemEventHandlers {
     }
 
     /**
-     * 服务器tick事件 - 用于备用方案
+     * 区块卸载事件 - 同步区块内所有信号机的状态到全局管理器
+     */
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public static void onChunkUnload(ChunkEvent.Unload event) {
+        if (event.getLevel() instanceof ServerLevel serverLevel) {
+            // 获取该区块内的所有信号机方块实体并同步状态
+            // 注意：event.getChunk() 返回 ChunkAccess，需要转换为 LevelChunk
+            if (event.getChunk() instanceof LevelChunk levelChunk) {
+                syncSignalsInChunk(serverLevel, levelChunk);
+            }
+        }
+    }
+
+    /**
+     * 服务器tick事件 - 用于定期更新信号状态
      */
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
@@ -97,15 +118,123 @@ public class SignalSystemEventHandlers {
             return;
         }
 
-        // 定期检查轨道网络变化（备用方案）
         long currentTick = event.getServer().getTickCount();
+
+        // 定期检查轨道网络变化（每10秒）
         if (currentTick - lastTrackGraphCheckTick > TRACK_GRAPH_CHECK_INTERVAL) {
             lastTrackGraphCheckTick = currentTick;
             checkTrackGraphChangesOnTick();
         }
+
+        // 定期更新所有列车的占用状态（每5个tick，即4次/秒）
+        if (currentTick % 5 == 0) {
+            updateAllTrainOccupancyStates(event.getServer());
+        }
     }
 
+
     // ========== 辅助方法 ==========
+
+    /**
+     * 更新所有列车的占用状态
+     */
+    private static void updateAllTrainOccupancyStates(MinecraftServer server) {
+        // 遍历所有维度
+        for (ServerLevel level : server.getAllLevels()) {
+            SignalStateManager manager = SignalStateManager.get(level);
+            if (manager == null) {
+                continue;
+            }
+
+            // 获取当前维度中所有列车
+            updateTrainOccupancyInLevel(manager, level);
+        }
+    }
+
+    /**
+     * 更新单个维度中所有列车的占用状态
+     */
+    private static void updateTrainOccupancyInLevel(SignalStateManager manager, ServerLevel level) {
+        // 收集所有列车的信号组
+        Set<UUID> occupiedGroups = new HashSet<>();
+
+        // 遍历Create的所有列车
+        ResourceKey<Level> dimensionKey = level.dimension();
+        for (Train train : Create.RAILWAYS.trains.values()) {
+            // 检查列车是否有车厢在当前维度
+            boolean trainInLevel = false;
+            for (Carriage carriage : train.carriages) {
+                // 使用公共方法检查维度
+                if (carriage.getDimensionalIfPresent(dimensionKey) != null) {
+                    trainInLevel = true;
+                    break;
+                }
+            }
+            if (trainInLevel) {
+                occupiedGroups.addAll(getTrainSignalGroups(train));
+            }
+        }
+
+        // 更新全局缓存中的占用状态
+        updateAllSignalGroupOccupancy(manager, level, occupiedGroups);
+    }
+
+
+    /**
+     * 获取列车当前所在的信号组
+     * 从列车对象的occupiedSignalBlocks获取（只包括物理占用，预约不算占用）
+     */
+    private static Set<UUID> getTrainSignalGroups(Train train) {
+        Set<UUID> groups = new HashSet<>();
+
+        // 只添加物理占用的信号组（与信号机逻辑保持一致，预约不算占用）
+        groups.addAll(train.occupiedSignalBlocks.keySet());
+
+        return groups;
+    }
+
+    /**
+     * 更新所有缓存中相关信号组的占用状态
+     */
+    private static void updateAllSignalGroupOccupancy(SignalStateManager manager, ServerLevel level, Set<UUID> occupiedGroups) {
+        // 获取当前维度的所有缓存
+        Map<BlockPos, SignalStateManager.SignalStateCache> cacheMap = manager.getDimensionCache(level);
+
+        if (cacheMap == null || cacheMap.isEmpty()) {
+            return;
+        }
+
+        boolean anyChanged = false;
+
+        // 更新所有缓存的占用状态
+        for (SignalStateManager.SignalStateCache cache : cacheMap.values()) {
+            boolean cacheChanged = false;
+
+            for (int i = 0; i < 4; i++) {
+                UUID groupId = cache.signalGroupIds[i];
+                if (groupId != null) {
+                    boolean newOccupied = occupiedGroups.contains(groupId);
+                    if (cache.occupancyStates[i] != newOccupied) {
+                        cache.occupancyStates[i] = newOccupied;
+                        cacheChanged = true;
+                    }
+                }
+            }
+
+            if (cacheChanged) {
+                // 重新计算信号状态
+                cache.calculateFourAspectState();
+                cache.calculateBaseSignalState();
+                cache.lastOccupancyUpdateTick = level.getGameTime();
+                anyChanged = true;
+            }
+        }
+
+        if (anyChanged) {
+            manager.setDirty();
+        }
+    }
+
 
     /**
      * 检查是否是信号机方块
@@ -238,6 +367,28 @@ public class SignalSystemEventHandlers {
         SignalStateManager manager = SignalStateManager.get(level);
         if (manager != null) {
             manager.registerSignal(level, pos, blockEntity);
+        }
+    }
+
+    /**
+     * 同步区块内所有信号机的状态到全局管理器
+     */
+    private static void syncSignalsInChunk(ServerLevel serverLevel, LevelChunk chunk) {
+        SignalStateManager manager = SignalStateManager.get(serverLevel);
+        if (manager == null) {
+            return;
+        }
+
+        // 遍历区块内的所有方块实体
+        for (var entry : chunk.getBlockEntities().entrySet()) {
+            BlockPos pos = entry.getKey();
+            var blockEntity = entry.getValue();
+
+            if (blockEntity instanceof SignalStateDisplayBlockEntity signalEntity) {
+                // 同步当前状态到全局管理器
+                manager.registerSignal(serverLevel, pos, signalEntity);
+                SimpleLogger.debug("[{}] 区块卸载，状态已同步到全局管理器", pos);
+            }
         }
     }
 

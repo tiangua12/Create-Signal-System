@@ -6,7 +6,6 @@ import com.easttown.createsignalsystem.config.RouteConfiguration;
 import com.easttown.createsignalsystem.network.ConfigureRoutePacket;
 import com.easttown.createsignalsystem.network.NetworkHandler;
 import com.simibubi.create.foundation.gui.AbstractSimiScreen;
-import com.simibubi.create.foundation.gui.AllGuiTextures;
 import com.simibubi.create.foundation.gui.AllIcons;
 import com.simibubi.create.foundation.gui.UIRenderHelper;
 import com.simibubi.create.foundation.gui.widget.AbstractSimiWidget;
@@ -21,6 +20,7 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -32,6 +32,7 @@ import java.util.Arrays;
 import java.util.List;
 
 public class RouteConfigScreen extends AbstractSimiScreen {
+    private static final ResourceLocation BACKGROUND = new ResourceLocation("create_signal_system", "textures/gui/route_config_bg.png");
 
     private final SignalStateDisplayBlockEntity blockEntity;
     private final BlockPos blockPos;
@@ -63,9 +64,7 @@ public class RouteConfigScreen extends AbstractSimiScreen {
 
     // 标签页定义
     private static final int TAB_DETAILS = 0; // 详情标签页
-    private static final int TAB_ROUTE_1_3 = 1; // 进路1-3配置
-    private static final int TAB_ROUTE_4_6 = 2; // 进路4-6配置
-    private static final int TAB_ROUTE_7 = 3; // 进路7配置
+    private static final int TAB_ALL_ROUTES = 1; // 所有进路配置（1-7）
 
     // TAB_MAPPING 已移除，信号映射集成到进路配置中
 
@@ -83,7 +82,7 @@ public class RouteConfigScreen extends AbstractSimiScreen {
         super.init();
 
         // 初始化标签页按钮数组（但不创建按钮实例）
-        tabButtons = new TabButton[5];
+        tabButtons = new TabButton[2];
 
         // 初始化当前标签页的内容（会创建所有按钮）
         initTabContent();
@@ -94,8 +93,8 @@ public class RouteConfigScreen extends AbstractSimiScreen {
         int guiLeft = (width - 256) / 2;
         int guiTop = (height - 166) / 2;
 
-        // 绘制背景
-        AllGuiTextures.PLAYER_INVENTORY.render(graphics, guiLeft, guiTop);
+        // 绘制背景（使用自定义背景纹理）
+        graphics.blit(BACKGROUND, guiLeft, guiTop, 0, 0, 256, 166, 256, 256);
 
         // 绘制标题
         graphics.drawString(font, title, guiLeft + 15, guiTop + 15, 0x442000, false);
@@ -116,16 +115,14 @@ public class RouteConfigScreen extends AbstractSimiScreen {
         // 清除所有之前的UI组件（包括按钮）
         clearWidgets();
 
-        // 重新创建标签页按钮（4个：详情、进路1-3、进路4-6、进路7）
-        String[] tabLabels = {"详情", "进路1-3", "进路4-6", "进路7"};
+        // 重新创建标签页按钮（2个：详情、所有进路）
+        String[] tabLabels = {"详情", "所有进路"};
         Component[] tabTooltips = {
                 Components.literal("显示信号机基本信息和状态"),
-                Components.literal("配置进路1-3的转向规则"),
-                Components.literal("配置进路4-6的转向规则"),
-                Components.literal("配置进路7的转向规则")
+                Components.literal("配置所有进路（1-7）的转向规则")
         };
 
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 2; i++) {
             tabButtons[i] = new TabButton(guiLeft + 10 + i * 45, guiTop - 20, tabLabels[i]);
             final int tabIndex = i;
             tabButtons[i].withCallback(() -> switchTab(tabIndex));
@@ -161,14 +158,8 @@ public class RouteConfigScreen extends AbstractSimiScreen {
             case TAB_DETAILS:
                 initDetailsTab();
                 break;
-            case TAB_ROUTE_1_3:
-                initRouteTab(1, 3);
-                break;
-            case TAB_ROUTE_4_6:
-                initRouteTab(4, 6);
-                break;
-            case TAB_ROUTE_7:
-                initRoute7Tab();
+            case TAB_ALL_ROUTES:
+                initRouteTab(1, 7);
                 break;
         }
     }
@@ -181,9 +172,7 @@ public class RouteConfigScreen extends AbstractSimiScreen {
             case TAB_DETAILS:
                 renderDetailsTab(graphics, guiLeft, guiTop);
                 break;
-            case TAB_ROUTE_1_3:
-            case TAB_ROUTE_4_6:
-            case TAB_ROUTE_7:
+            case TAB_ALL_ROUTES:
                 // 进路配置标签页 - 手动渲染所有滑条
                 for (NumericSlider slider : allSliders) {
                     slider.render(graphics, mouseX, mouseY, partialTicks);
@@ -350,21 +339,6 @@ public class RouteConfigScreen extends AbstractSimiScreen {
         turnSliders.put(routeId, sliders);
     }
 
-    private void initRoute7Tab() {
-        // 初始化进路7标签页 - 复用initRouteTab方法
-        initRouteTab(7, 7);
-    }
-
-    private void initMappingTab() {
-        // 初始化信号映射标签页
-        int guiLeft = (width - 256) / 2;
-        int guiTop = (height - 166) / 2;
-
-        // 可以添加标签说明
-        Label mappingLabel = new Label(guiLeft + 20, guiTop + 50, Component.literal("红石信号映射配置"));
-        mappingLabel.text = Component.literal("红石信号映射配置");
-        addRenderableWidget(mappingLabel);
-    }
 
     private void renderDetailsTab(GuiGraphics graphics, int guiLeft, int guiTop) {
         // 绘制详情标签页内容
@@ -388,7 +362,7 @@ public class RouteConfigScreen extends AbstractSimiScreen {
             graphics.drawString(font, status, guiLeft + 40, guiTop + 135 + i * 15, color, false);
         }
     }
-
+/*
     private void renderMappingTab(GuiGraphics graphics, int guiLeft, int guiTop) {
         // 绘制信号映射标签页内容
         graphics.drawString(font, "红石信号到进路映射", guiLeft + 20, guiTop + 50, 0x442000, false);
@@ -404,7 +378,7 @@ public class RouteConfigScreen extends AbstractSimiScreen {
             graphics.drawString(font, mapping, guiLeft + 40, guiTop + 125 + (signal - 1) * 12, 0x666666, false);
         }
     }
-
+*/
     private void switchTab(int newTab) {
         // 切换标签页时自动保存当前标签页的配置
         saveCurrentTabConfig();
@@ -459,37 +433,9 @@ public class RouteConfigScreen extends AbstractSimiScreen {
     private void saveCurrentTabConfig() {
         // 保存当前标签页的配置
         // 配置已经在UI组件的回调中实时更新，这里确保同步
-        if (currentTab == TAB_ROUTE_1_3) {
-            // 进路1-3配置标签页
-            for (int routeId = 1; routeId <= 3; routeId++) {
-                // 确保显示编号和名称已更新
-                EditBox numberBox = displayNumberBoxes.get(routeId);
-                EditBox nameBox = displayNameBoxes.get(routeId);
-                if (numberBox != null && nameBox != null) {
-                    RouteConfiguration config = routeConfigs.get(routeId);
-                    if (config != null) {
-                        config.setDisplayNumber(numberBox.getValue());
-                        config.setDisplayName(nameBox.getValue());
-                    }
-                }
-                // 滑条方向值已经在回调中更新，无需额外处理
-            }
-        } else if (currentTab == TAB_ROUTE_4_6) {
-            // 进路4-6配置标签页
-            for (int routeId = 4; routeId <= 6; routeId++) {
-                EditBox numberBox = displayNumberBoxes.get(routeId);
-                EditBox nameBox = displayNameBoxes.get(routeId);
-                if (numberBox != null && nameBox != null) {
-                    RouteConfiguration config = routeConfigs.get(routeId);
-                    if (config != null) {
-                        config.setDisplayNumber(numberBox.getValue());
-                        config.setDisplayName(nameBox.getValue());
-                    }
-                }
-            }
-        } else if (currentTab == TAB_ROUTE_7) {
-            // 进路7配置标签页
-            int routeId = 7;
+        if (currentTab == TAB_ALL_ROUTES) {
+            // 所有进路配置标签页 - 只保存当前选中的进路
+            int routeId = selectedRouteInTab;
             EditBox numberBox = displayNumberBoxes.get(routeId);
             EditBox nameBox = displayNameBoxes.get(routeId);
             if (numberBox != null && nameBox != null) {
@@ -499,6 +445,7 @@ public class RouteConfigScreen extends AbstractSimiScreen {
                     config.setDisplayName(nameBox.getValue());
                 }
             }
+            // 滑条方向值已经在回调中更新，无需额外处理
         }
     }
 
@@ -514,11 +461,11 @@ public class RouteConfigScreen extends AbstractSimiScreen {
             ConfigureRoutePacket packet = new ConfigureRoutePacket(blockPos, routeConfigs, signalMappings);
             NetworkHandler.CHANNEL.sendToServer(packet);
 
-            minecraft.player.displayClientMessage(
+        /*    minecraft.player.displayClientMessage(
                     net.minecraft.network.chat.Component.literal("§a配置已保存到服务器"),
                     false
             );
-
+*/
             // 关闭屏幕
             minecraft.player.closeContainer();
         } finally {

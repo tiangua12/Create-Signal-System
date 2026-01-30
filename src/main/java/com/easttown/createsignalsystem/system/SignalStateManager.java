@@ -1,6 +1,8 @@
 package com.easttown.createsignalsystem.system;
 
 import com.easttown.createsignalsystem.block.entity.SignalStateDisplayBlockEntity;
+import com.easttown.createsignalsystem.config.RouteConfiguration;
+import com.easttown.createsignalsystem.util.SimpleLogger;
 import com.simibubi.create.Create;
 import com.simibubi.create.content.trains.graph.TrackGraph;
 import com.simibubi.create.content.trains.graph.EdgePointType;
@@ -81,6 +83,10 @@ public class SignalStateManager extends SavedData {
         public boolean forceRed = false;
         public int lastRedstoneSignal = 0;
 
+        // 进路配置（红石信号映射和进路详细配置）
+        public final Map<Integer, Integer> signalMappings = new HashMap<>(); // 红石信号(0-15) -> 进路槽位(0-7)
+        public final Map<Integer, RouteConfiguration> routeConfigs = new HashMap<>(); // 进路槽位(1-7) -> 进路配置
+
         // 连接状态
         public boolean isConnectedToTrack = false;
         public UUID connectedBoundaryId = null;
@@ -109,23 +115,38 @@ public class SignalStateManager extends SavedData {
         }
 
         /**
-         * 从方块实体同步配置
+         * 从方块实体同步完整配置
+         * 在区块卸载前调用，确保全局管理器拥有最新状态
          */
         public void syncFromBlockEntity(SignalStateDisplayBlockEntity blockEntity) {
             System.arraycopy(blockEntity.getSignalGroupIds(), 0, signalGroupIds, 0, 4);
             System.arraycopy(blockEntity.getOccupancyStates(), 0, occupancyStates, 0, 4);
 
-            // 同步边界ID（如果方块实体有相应方法）
-            // 注意：SignalStateDisplayBlockEntity目前没有getBoundaryIds()方法
-            // 需要后续添加
+            // 同步边界ID
+            String[] entityBoundaryIds = blockEntity.getBoundaryIds();
+            if (entityBoundaryIds != null && entityBoundaryIds.length >= 4) {
+                System.arraycopy(entityBoundaryIds, 0, boundaryIds, 0, 4);
+            }
 
             this.currentRoute = blockEntity.getCurrentRoute();
             this.forceRed = blockEntity.isForceRed();
             this.lastRedstoneSignal = blockEntity.getLastRedstoneSignal();
+            this.fourAspectState = blockEntity.getFourAspectState();
+
+            // 同步进路配置
+            this.signalMappings.clear();
+            this.signalMappings.putAll(blockEntity.getAllSignalMappings());
+
+            this.routeConfigs.clear();
+            this.routeConfigs.putAll(blockEntity.getAllRouteConfigs());
 
             // 更新配置时间戳
             this.lastConfigUpdateTick = blockEntity.getLevel() != null ?
                 blockEntity.getLevel().getGameTime() : 0;
+
+            // 同步后重新计算状态以确保一致性
+            calculateFourAspectState();
+            calculateBaseSignalState();
         }
 
         /**
@@ -223,6 +244,48 @@ public class SignalStateManager extends SavedData {
                 default:
                     baseSignalState = com.simibubi.create.content.trains.signal.SignalBlockEntity.SignalState.INVALID;
             }
+        }
+
+        /**
+         * 清理指定的边界ID引用
+         * @param boundaryId 要清理的边界ID（UUID字符串）
+         */
+        public void clearBoundaryReference(String boundaryId) {
+            if (boundaryId == null || boundaryId.isEmpty()) {
+                return;
+            }
+
+            for (int i = 0; i < boundaryIds.length; i++) {
+                if (boundaryId.equals(boundaryIds[i])) {
+                    boundaryIds[i] = "";
+                    signalGroupIds[i] = null;
+                    // 对应的占用状态也重置
+                    occupancyStates[i] = false;
+                    SimpleLogger.debug("[{}] 清理边界ID引用: {} (槽位{})",
+                        position, boundaryId, i);
+                }
+            }
+        }
+
+        /**
+         * 检查并清理所有空的边界ID引用
+         * @return 是否还有有效的边界ID
+         */
+        public boolean cleanupEmptyBoundaryIds() {
+            boolean hasValidBoundary = false;
+
+            for (int i = 0; i < boundaryIds.length; i++) {
+                if (boundaryIds[i] != null && !boundaryIds[i].isEmpty()) {
+                    hasValidBoundary = true;
+                } else {
+                    // 清理空槽位
+                    boundaryIds[i] = "";
+                    signalGroupIds[i] = null;
+                    occupancyStates[i] = false;
+                }
+            }
+
+            return hasValidBoundary;
         }
 
         /**
@@ -327,6 +390,19 @@ public class SignalStateManager extends SavedData {
                 tag.putUUID("connectedGraphId", connectedGraphId);
             }
 
+            // 保存进路配置
+            CompoundTag signalMappingsTag = new CompoundTag();
+            for (Map.Entry<Integer, Integer> entry : signalMappings.entrySet()) {
+                signalMappingsTag.putInt("signal_" + entry.getKey(), entry.getValue());
+            }
+            tag.put("signalMappings", signalMappingsTag);
+
+            CompoundTag routeConfigsTag = new CompoundTag();
+            for (Map.Entry<Integer, RouteConfiguration> entry : routeConfigs.entrySet()) {
+                routeConfigsTag.put("route_" + entry.getKey(), entry.getValue().serialize());
+            }
+            tag.put("routeConfigs", routeConfigsTag);
+
             // 保存寻路数据
             tag.putLong("lastPathfindingTick", lastPathfindingTick);
             tag.putBoolean("needsPathfindingUpdate", needsPathfindingUpdate);
@@ -404,6 +480,34 @@ public class SignalStateManager extends SavedData {
 
             if (tag.contains("needsPathfindingUpdate", Tag.TAG_BYTE)) {
                 cache.needsPathfindingUpdate = tag.getBoolean("needsPathfindingUpdate");
+            }
+
+            // 加载进路配置
+            if (tag.contains("signalMappings", Tag.TAG_COMPOUND)) {
+                CompoundTag signalMappingsTag = tag.getCompound("signalMappings");
+                cache.signalMappings.clear();
+                for (String key : signalMappingsTag.getAllKeys()) {
+                    if (key.startsWith("signal_")) {
+                        int signal = Integer.parseInt(key.substring(7)); // 去掉"signal_"前缀
+                        int route = signalMappingsTag.getInt(key);
+                        cache.signalMappings.put(signal, route);
+                    }
+                }
+            }
+
+            if (tag.contains("routeConfigs", Tag.TAG_COMPOUND)) {
+                CompoundTag routeConfigsTag = tag.getCompound("routeConfigs");
+                cache.routeConfigs.clear();
+                for (String key : routeConfigsTag.getAllKeys()) {
+                    if (key.startsWith("route_")) {
+                        int routeId = Integer.parseInt(key.substring(6)); // 去掉"route_"前缀
+                        CompoundTag routeTag = routeConfigsTag.getCompound(key);
+                        RouteConfiguration config = RouteConfiguration.deserialize(routeTag);
+                        if (config != null) {
+                            cache.routeConfigs.put(routeId, config);
+                        }
+                    }
+                }
             }
 
             return cache;
@@ -530,6 +634,12 @@ public class SignalStateManager extends SavedData {
 
         // 3. 同步连接状态（检查信号机是否仍然连接到轨道）
         syncConnectionStates(level);
+
+        // 4. 定期清理无效缓存（每10分钟清理一次）
+        if (currentTick % 12000 == 0) { // 12000 ticks = 10分钟
+            cleanupInvalidCaches(level);
+            SimpleLogger.debug("执行定期缓存清理");
+        }
     }
 
     /**
@@ -635,7 +745,62 @@ public class SignalStateManager extends SavedData {
         }
 
         ResourceLocation dimension = level.dimension().location();
+
+        // 清理该缓存自身的空引用（防止内存泄漏）
+        Map<BlockPos, SignalStateCache> cacheMap = dimensionCache.get(dimension);
+        if (cacheMap != null) {
+            SignalStateCache cache = cacheMap.get(pos);
+            if (cache != null) {
+                cache.cleanupEmptyBoundaryIds();
+            }
+        }
+
         updateQueue.add(new StateUpdateTask(dimension, pos, null));
+    }
+
+
+    /**
+     * 定期清理无效的缓存条目
+     * @param level 服务器级别
+     */
+    public void cleanupInvalidCaches(ServerLevel level) {
+        ResourceLocation dimension = level.dimension().location();
+        Map<BlockPos, SignalStateCache> cacheMap = dimensionCache.get(dimension);
+        if (cacheMap == null) {
+            return;
+        }
+
+        long currentTick = level.getGameTime();
+        int removedCount = 0;
+
+        Iterator<Map.Entry<BlockPos, SignalStateCache>> iterator = cacheMap.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, SignalStateCache> entry = iterator.next();
+            SignalStateCache cache = entry.getValue();
+
+            // 清理空边界ID
+            cache.cleanupEmptyBoundaryIds();
+
+            // 检查是否还有有效的边界ID
+            boolean hasValidBoundary = false;
+            for (String boundaryId : cache.boundaryIds) {
+                if (boundaryId != null && !boundaryId.isEmpty()) {
+                    hasValidBoundary = true;
+                    break;
+                }
+            }
+
+            // 如果没有有效边界ID且长时间未更新（超过10分钟），移除缓存
+            if (!hasValidBoundary && currentTick - cache.lastUpdatedTick > 12000) {
+                iterator.remove();
+                removedCount++;
+            }
+        }
+
+        if (removedCount > 0) {
+            SimpleLogger.debug("清理缓存：移除 {} 个无效条目", removedCount);
+            setDirty();
+        }
     }
 
     /**
@@ -654,6 +819,46 @@ public class SignalStateManager extends SavedData {
     }
 
     /**
+     * 从全局缓存恢复状态到方块实体
+     * 在区块加载时调用，用于恢复信号机状态
+     */
+    public boolean restoreStateToBlockEntity(ServerLevel level, BlockPos pos, SignalStateDisplayBlockEntity blockEntity) {
+        SignalStateCache cache = getSignalCache(level, pos);
+        if (cache == null) {
+            return false;
+        }
+
+        try {
+            // 恢复四个信号组ID
+            System.arraycopy(cache.signalGroupIds, 0, blockEntity.getSignalGroupIds(), 0, 4);
+
+            // 恢复占用状态
+            System.arraycopy(cache.occupancyStates, 0, blockEntity.getOccupancyStates(), 0, 4);
+
+            // 恢复配置状态
+            blockEntity.setCurrentRoute(cache.currentRoute);
+            blockEntity.setForceRed(cache.forceRed);
+            blockEntity.setLastRedstoneSignal(cache.lastRedstoneSignal);
+
+            // 恢复四显示信号状态
+            blockEntity.setFourAspectState(cache.fourAspectState);
+
+            // 恢复进路配置
+            blockEntity.setSignalMappings(cache.signalMappings);
+            blockEntity.setRouteConfigs(cache.routeConfigs);
+
+            // 标记需要重新寻路（因为可能已过期）
+            blockEntity.markNeedsPathfindingUpdate();
+
+            SimpleLogger.debug("[{}] 从全局缓存恢复状态成功", pos);
+            return true;
+        } catch (Exception e) {
+            SimpleLogger.error("[{}] 从全局缓存恢复状态失败: {}", pos, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * 获取维度中所有信号的位置
      */
     public Set<BlockPos> getAllSignalPositions(Level level) {
@@ -665,6 +870,84 @@ public class SignalStateManager extends SavedData {
         }
 
         return new HashSet<>(cacheMap.keySet());
+    }
+
+    /**
+     * 获取维度中的所有信号缓存（供事件处理器使用）
+     */
+    public Map<BlockPos, SignalStateCache> getDimensionCache(Level level) {
+        ResourceLocation dimension = level.dimension().location();
+        Map<BlockPos, SignalStateCache> cacheMap = dimensionCache.get(dimension);
+
+        if (cacheMap == null) {
+            return Collections.emptyMap();
+        }
+
+        return cacheMap;
+    }
+
+    /**
+     * 通过边界ID查找信号机缓存
+     * @param level 服务器级别
+     * @param boundaryId 边界ID（UUID字符串表示）
+     * @return 匹配的信号机缓存列表（可能为空）
+     */
+    public List<SignalStateCache> findSignalCachesByBoundaryId(ServerLevel level, String boundaryId) {
+        List<SignalStateCache> results = new ArrayList<>();
+        if (boundaryId == null || boundaryId.isEmpty()) {
+            return results;
+        }
+
+        Map<BlockPos, SignalStateCache> cacheMap = getDimensionCache(level);
+        if (cacheMap == null || cacheMap.isEmpty()) {
+            return results;
+        }
+
+        for (SignalStateCache cache : cacheMap.values()) {
+            // 先清理缓存中的空边界ID（防止查询到无效数据）
+            cache.cleanupEmptyBoundaryIds();
+
+            for (int i = 0; i < 4; i++) {
+                String id = cache.boundaryIds[i];
+                // 严格检查：非空且相等
+                if (id != null && !id.isEmpty() && boundaryId.equals(id)) {
+                    results.add(cache);
+                    break; // 一个信号机可能有多个相同的边界ID，但我们只需要添加一次
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /**
+     * 通过边界ID获取四显示信号状态
+     * @param level 服务器级别
+     * @param boundaryId 边界ID（UUID字符串表示）
+     * @return 四显示信号状态，如果没有找到返回INVALID
+     */
+    public SignalStateDisplayBlockEntity.FourAspectSignalState getFourAspectStateForBoundary(ServerLevel level, String boundaryId) {
+        List<SignalStateCache> caches = findSignalCachesByBoundaryId(level, boundaryId);
+        if (caches.isEmpty()) {
+            return SignalStateDisplayBlockEntity.FourAspectSignalState.INVALID;
+        }
+        // 返回第一个找到的信号机状态
+        return caches.get(0).fourAspectState;
+    }
+
+    /**
+     * 通过边界ID获取二显示信号状态
+     * @param level 服务器级别
+     * @param boundaryId 边界ID（UUID字符串表示）
+     * @return 二显示信号状态，如果没有找到返回INVALID
+     */
+    public com.simibubi.create.content.trains.signal.SignalBlockEntity.SignalState getTwoAspectStateForBoundary(ServerLevel level, String boundaryId) {
+        List<SignalStateCache> caches = findSignalCachesByBoundaryId(level, boundaryId);
+        if (caches.isEmpty()) {
+            return com.simibubi.create.content.trains.signal.SignalBlockEntity.SignalState.INVALID;
+        }
+        // 返回第一个找到的信号机的基础信号状态
+        return caches.get(0).baseSignalState;
     }
 
     /**
@@ -782,7 +1065,7 @@ public class SignalStateManager extends SavedData {
 
         } catch (Exception e) {
             // 寻路失败，记录错误
-            com.easttown.createsignalsystem.util.SimpleLogger.error(
+            SimpleLogger.error(
                 "寻路失败: 位置={}, 错误={}", cache.position, e.getMessage());
             return false;
         }

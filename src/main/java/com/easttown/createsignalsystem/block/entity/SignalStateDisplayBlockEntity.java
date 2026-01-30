@@ -5,10 +5,13 @@ import com.easttown.createsignalsystem.CreateSignalSystemMod;
 import com.easttown.createsignalsystem.util.SimpleLogger;
 import com.easttown.createsignalsystem.config.RouteConfiguration;
 import com.easttown.createsignalsystem.config.TurnAction;
+import com.easttown.createsignalsystem.system.SignalStateManager;
+import com.easttown.createsignalsystem.system.SignalStateManager.SignalStateCache;
 import com.simibubi.create.content.trains.graph.EdgePointType;
 import javax.annotation.Nullable;
 import com.simibubi.create.content.trains.signal.SignalBoundary;
 import com.simibubi.create.content.trains.signal.SignalBlockEntity;
+import net.minecraft.server.level.ServerLevel;
 import com.simibubi.create.content.trains.signal.SignalEdgeGroup;
 import com.simibubi.create.content.trains.signal.TrackEdgePoint;
 import com.simibubi.create.content.trains.track.TrackTargetingBehaviour;
@@ -92,6 +95,9 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
     private final Map<
             Integer, Integer> signalMappings = new HashMap<>(); // 红石信号强度(1-15)到进路槽位(1-7)的映射
 
+    // 全局管理器引用
+    private SignalStateManager signalStateManager;
+
     // 构造函数
     public SignalStateDisplayBlockEntity(BlockEntityType<?> type, BlockPos pos, BlockState state) {
         super(type, pos, state);
@@ -111,6 +117,34 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
         // 调用父类方法以添加edgePoint行为
         super.addBehaviours(behaviours);
     }
+
+    /**
+     * 方块实体加载时：从全局管理器恢复状态，并确保注册到全局管理器
+     */
+    @Override
+    public void onLoad() {
+        super.onLoad();
+
+        if (!level.isClientSide && level instanceof ServerLevel serverLevel) {
+            // 获取全局管理器
+            signalStateManager = SignalStateManager.get(serverLevel);
+            if (signalStateManager != null) {
+                // 尝试从全局缓存恢复状态
+                boolean restored = signalStateManager.restoreStateToBlockEntity(serverLevel, worldPosition, this);
+                if (restored) {
+                    SimpleLogger.debug("[{}] 从全局管理器恢复状态成功", worldPosition);
+                } else {
+                    SimpleLogger.debug("[{}] 无全局缓存状态，使用本地初始化", worldPosition);
+                }
+
+                // 无论是否恢复成功，都同步当前状态到全局管理器，确保全局管理器有此信号机的最新记录
+                // 这对于新放置的信号机和重新加载的旧信号机都很重要
+                signalStateManager.registerSignal(serverLevel, worldPosition, this);
+                SimpleLogger.debug("[{}] 状态已同步到全局管理器", worldPosition);
+            }
+        }
+    }
+
 
     @Nullable
     public SignalBoundary getSignal() {
@@ -157,8 +191,8 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
             lastCheckedBoundary = currentBoundary;
         }
 
-        // 5. 更新所有信号组的占用状态（每次tick都检查，因为占用状态可能随时变化）
-        updateOccupancyStates();
+        // 5. 更新所有信号组的占用状态（优先从全局管理器获取）
+        updateOccupancyStatesFromGlobal();
 
         // 调试：显示信号组ID和占用状态
         SimpleLogger.debug("[{}] 信号组ID状态: [0]={}, [1]={}, [2]={}, [3]={}",
@@ -183,7 +217,12 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
         // 8. 更新红石信号输出（红灯时输出信号）
         updateRedstoneOutput();
 
-        // 9. 标记数据已更新
+        // 9. 定期同步到全局管理器（每10秒）
+        if (level.getGameTime() % 200 == 0) {
+            syncToGlobalManager();
+        }
+
+        // 10. 标记数据已更新
         setChanged();
     }
 
@@ -736,7 +775,28 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
     }
 
     // 更新所有信号组的占用状态（只检测物理占用，预约不算占用）
-    private void updateOccupancyStates() {
+    /**
+     * 从全局管理器获取占用状态
+     */
+    private void updateOccupancyStatesFromGlobal() {
+        if (signalStateManager != null && level instanceof ServerLevel serverLevel) {
+            SignalStateManager.SignalStateCache cache =
+                signalStateManager.getSignalCache(serverLevel, worldPosition);
+            if (cache != null) {
+                // 使用全局管理器计算的占用状态
+                System.arraycopy(cache.occupancyStates, 0, occupancyStates, 0, 4);
+                return;
+            }
+        }
+
+        // 备用：本地计算占用状态
+        updateOccupancyStatesLocally();
+    }
+
+    /**
+     * 本地计算占用状态（备用方法）
+     */
+    private void updateOccupancyStatesLocally() {
         for (int i = 0; i < 4; i++) {
             if (signalGroupIds[i] == null) {
                 // 无信号组ID，视为空闲
@@ -747,6 +807,20 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
             // 检测占用状态（只检测物理占用，预约不算占用）
             occupancyStates[i] = isSignalGroupOccupied(signalGroupIds[i]);
         }
+    }
+
+    /**
+     * 同步当前状态到全局管理器
+     */
+    private void syncToGlobalManager() {
+        if (signalStateManager != null && level instanceof ServerLevel serverLevel) {
+            signalStateManager.registerSignal(serverLevel, worldPosition, this);
+        }
+    }
+
+    private void updateOccupancyStates() {
+        // 保持向后兼容，调用新的本地计算方法
+        updateOccupancyStatesLocally();
     }
 
     // 检查信号组是否占用（包括强制红灯，只检测物理占用，预约不算占用）
@@ -996,14 +1070,45 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
         return fourAspectState;
     }
 
+    // 设置四显示信号状态
+    public void setFourAspectState(FourAspectSignalState state) {
+        this.fourAspectState = state;
+        setChanged();
+    }
+
     // 获取当前进路
     public int getCurrentRoute() {
         return currentRoute;
     }
 
+    // 设置当前进路
+    public void setCurrentRoute(int route) {
+        this.currentRoute = route;
+        setChanged();
+    }
+
     // 获取强制红灯状态
     public boolean isForceRed() {
         return forceRed;
+    }
+
+    // 设置强制红灯状态
+    public void setForceRed(boolean forceRed) {
+        this.forceRed = forceRed;
+        setChanged();
+    }
+
+    // 设置最后红石信号强度
+    public void setLastRedstoneSignal(int signal) {
+        this.lastRedstoneSignal = signal;
+        setChanged();
+    }
+
+    // 标记需要重新寻路
+    public void markNeedsPathfindingUpdate() {
+        this.lastCheckedBoundary = null;
+        this.tickCounter = PATHFINDING_INTERVAL; // 强制下次tick执行寻路
+        setChanged();
     }
 
     // UUID验证辅助方法
@@ -1249,6 +1354,22 @@ public class SignalStateDisplayBlockEntity extends SignalBlockEntity {
             // 不是岔道，或者没有转向配置，直行
             return travellingPoint.steer(SteerDirection.NONE, new Vec3(0, 1, 0)).apply(graph, pair);
         };
+    }
+
+    /** 设置所有红石信号映射 */
+    public void setSignalMappings(Map<Integer, Integer> newMappings) {
+        signalMappings.clear();
+        signalMappings.putAll(newMappings);
+        setChanged();
+        lastCheckedBoundary = null; // 强制重新寻路
+    }
+
+    /** 设置所有进路配置 */
+    public void setRouteConfigs(Map<Integer, RouteConfiguration> newConfigs) {
+        routeConfigs.clear();
+        routeConfigs.putAll(newConfigs);
+        setChanged();
+        lastCheckedBoundary = null; // 强制重新寻路
     }
 
     /** 估算轨道图的边数 */
